@@ -1,0 +1,22 @@
+services:
+  ranjit:
+    build: .
+    image: ranjit:local
+    env_file: .env
+    environment:
+      RANJIT_API_KEY: ${RANJIT_API_KEY:?Run make setup first}
+      RANJIT_ADDR: 0.0.0.0:8080
+      RANJIT_DATABASE: /data/ranjit.db
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ranjit_data:/data
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    stop_grace_period: 20s
+
+volumes:
+  ranjit_data:

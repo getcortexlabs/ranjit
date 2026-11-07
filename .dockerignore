@@ -1,0 +1,12 @@
+.git
+.github
+.env
+.env.*
+data
+bin
+coverage.out
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+.DS_Store

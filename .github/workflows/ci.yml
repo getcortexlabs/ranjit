@@ -1,0 +1,52 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go: ['1.26.x', '1.27.x']
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: ${{ matrix.go }}
+      - run: make check build
+      - name: Exercise the running server
+        shell: bash
+        run: |
+          make setup
+          set -a
+          source .env
+          set +a
+          ./bin/ranjit > /tmp/ranjit.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 30); do
+            if ./bin/ranjit healthcheck; then break; fi
+            sleep 1
+          done
+          make smoke
+      - name: Check known vulnerabilities
+        if: matrix.go == '1.27.x'
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Build and exercise container
+        shell: bash
+        run: |
+          cp .env.example .env
+          sed -i "s/^RANJIT_API_KEY=$/RANJIT_API_KEY=$(openssl rand -hex 32)/" .env
+          trap 'docker compose down --volumes' EXIT
+          docker compose up --build --wait --wait-timeout 120
+          make smoke
