@@ -153,7 +153,7 @@ func (s *Store) Expire(ctx context.Context, now time.Time) error {
 	return tx.Commit()
 }
 
-func active(ctx context.Context, tx *sql.Tx, id string, now time.Time) error {
+func active(ctx context.Context, tx *transaction, id string, now time.Time) error {
 	var status, source string
 	var expires int64
 	err := tx.QueryRowContext(ctx, `SELECT status, consent_expires_at, provider FROM connections WHERE id = ?`, id).Scan(&status, &expires, &source)
@@ -170,7 +170,7 @@ func active(ctx context.Context, tx *sql.Tx, id string, now time.Time) error {
 }
 
 // readable allows the owner to consult retained history after a direct grant ends.
-func readable(ctx context.Context, tx *sql.Tx, id string, now time.Time) error {
+func readable(ctx context.Context, tx *transaction, id string, now time.Time) error {
 	c, err := scanConnection(tx.QueryRowContext(ctx, `SELECT `+connectionColumns+` FROM connections WHERE id=?`, id))
 	if err != nil {
 		return err
@@ -197,7 +197,7 @@ func (s *Store) Pause(ctx context.Context, id string, now time.Time) error {
 	return tx.Commit()
 }
 
-func cancelJobs(ctx context.Context, tx *sql.Tx, id string, now time.Time) error {
+func cancelJobs(ctx context.Context, tx *transaction, id string, now time.Time) error {
 	_, err := tx.ExecContext(ctx, `UPDATE jobs SET status='cancelled',updated_at=?,lease_token='',lease_until=0 WHERE connection_id=? AND status IN ('queued','running')`, now.UnixMilli(), id)
 	return err
 }

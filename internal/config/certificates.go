@@ -3,10 +3,10 @@ package config
 import (
 	"crypto/x509"
 	"encoding/pem"
-	"io"
 	"math"
-	"os"
 	"time"
+
+	"github.com/getcortexlabs/ranjit/internal/provider"
 )
 
 // CertificateStatus deliberately omits certificate subjects, serials and paths.
@@ -63,13 +63,8 @@ func (c Config) Certificates(now time.Time) []CertificateStatus {
 	return out
 }
 func readCertificate(path string) *x509.Certificate {
-	f, err := os.Open(path)
+	data, err := provider.ReadPEM(path)
 	if err != nil {
-		return nil
-	}
-	defer f.Close()
-	data, err := io.ReadAll(io.LimitReader(f, (1<<20)+1))
-	if err != nil || len(data) > 1<<20 {
 		return nil
 	}
 	for len(data) > 0 {

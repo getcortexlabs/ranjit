@@ -10,6 +10,19 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: ranjit
+          POSTGRES_PASSWORD: test-only-password
+          POSTGRES_DB: ranjit
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U ranjit"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      RANJIT_TEST_POSTGRES_URL: postgres://ranjit:test-only-password@localhost:5432/ranjit?sslmode=disable
     strategy:
       matrix:
         go: ['1.26.x', '1.27.x']
@@ -20,6 +33,10 @@ jobs:
           go-version: ${{ matrix.go }}
       - run: make check build
       - run: python3 scripts/test_install.py
+      - name: Exercise PostgreSQL and the Go backend example
+        run: |
+          go build -o bin/backend-example ./examples/backend
+          python3 scripts/server_smoke.py ./bin/ranjit ./bin/backend-example
       - name: Exercise the running server
         shell: bash
         run: |

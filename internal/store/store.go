@@ -21,11 +21,16 @@ import (
 var migrations embed.FS
 
 type Store struct {
-	db    *sql.DB
+	db    *database
 	guard *filelock.Lock
 }
 
-func Open(ctx context.Context, path string) (*Store, error) { return open(ctx, path, true) }
+func Open(ctx context.Context, path string) (*Store, error) {
+	if IsPostgres(path) {
+		return openPostgres(ctx, path)
+	}
+	return open(ctx, path, true)
+}
 
 func open(ctx context.Context, path string, acquire bool) (*Store, error) {
 	abs, err := filepath.Abs(path)
@@ -71,7 +76,7 @@ func open(ctx context.Context, path string, acquire bool) (*Store, error) {
 	}
 	// One writer per installation. WAL still permits external backup readers.
 	db.SetMaxOpenConns(1)
-	s := &Store{db: db, guard: guard}
+	s := &Store{db: &database{DB: db}, guard: guard}
 	if err = s.migrate(ctx); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("migrate: %w", err)

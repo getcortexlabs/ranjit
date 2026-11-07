@@ -28,7 +28,7 @@ func (s *Store) Job(ctx context.Context, id string) (ranjit.Job, error) {
 	return scanJob(s.db.QueryRowContext(ctx, `SELECT `+jobColumns+` FROM jobs WHERE id = ?`, id))
 }
 
-func enqueue(ctx context.Context, tx *sql.Tx, id string, now time.Time) (ranjit.Job, error) {
+func enqueue(ctx context.Context, tx *transaction, id string, now time.Time) (ranjit.Job, error) {
 	_, err := tx.ExecContext(ctx, `INSERT INTO jobs (id, connection_id, status, created_at, updated_at, available_at)
 		VALUES (?, ?, 'queued', ?, ?, ?) ON CONFLICT DO NOTHING`, ranjit.NewID("job"), id, now.UnixMilli(), now.UnixMilli(), now.UnixMilli())
 	if err != nil {

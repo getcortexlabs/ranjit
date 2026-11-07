@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"time"
 )
 
@@ -81,6 +82,9 @@ func (c Personal) Validate() error {
 	if c.Version != 1 {
 		return errors.New("unsupported configuration version")
 	}
+	if strings.Contains(c.Database, "://") {
+		return errors.New("config.json requires a SQLite path; use RANJIT_DATABASE_URL and RANJIT_API_KEY for a PostgreSQL server")
+	}
 	if c.Database == "" {
 		return errors.New("database path is required")
 	}
@@ -90,8 +94,12 @@ func (c Personal) Validate() error {
 	if d, err := time.ParseDuration(c.SyncInterval); err != nil || d < time.Minute {
 		return errors.New("sync_interval must be at least 1m")
 	}
+	return validateProfiles(c.Profiles)
+}
+
+func validateProfiles(profiles []Profile) error {
 	seen := map[string]bool{}
-	for _, p := range c.Profiles {
+	for _, p := range profiles {
 		if !ValidName(p.Name) || seen[p.Name] {
 			return errors.New("profile names must be unique and contain letters, numbers, _ or - (maximum 64 characters)")
 		}
@@ -141,7 +149,7 @@ func SavePersonal(path string, c Personal) error {
 
 func (c Personal) Runtime(path string) Config {
 	resolve := func(p string) string {
-		if p == "" || filepath.IsAbs(p) {
+		if p == "" || filepath.IsAbs(p) || strings.HasPrefix(p, "env:") {
 			return p
 		}
 		return filepath.Join(filepath.Dir(path), p)

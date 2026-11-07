@@ -1,12 +1,13 @@
-Painel local e manutenção para uso pessoal.
+Ranjit como serviço para seu backend, com SDK Go e PostgreSQL.
 
-- `ranjit ui` abre contas, saldos, pesquisa de lançamentos e importação no navegador, no mesmo binário Go.
-- Prévia de OFX/CSV e mapeamento de colunas antes de gravar.
-- Pausa e renovação de coleta sem perder o histórico das conexões diretas.
-- Backup consistente e restauração com cópia anterior e acesso bancário pausado.
-- Serviço do usuário para macOS, Linux e Windows; atualização com checksum e backup; avisos de validade de certificados.
-- `ranjit validate` gera relatório sem dados financeiros ou credenciais. Conferência do extrato continua manual.
+- PostgreSQL para hospedagem, mantendo SQLite como padrão local.
+- Configuração de vários perfis por `RANJIT_PROFILES_JSON` e credenciais por referências `env:NOME` aos segredos da plataforma.
+- `ranjit.NewClientFromEnv()` e um exemplo de backend com importação e consulta de transações.
+- Guia de instalação em servidor e receita preparada para o catálogo do Orbit.
+- Testes com PostgreSQL real para concorrência, reinício, rollback, deduplicação e revogação; integração do SDK verificada contra o servidor em execução.
 
-Os conectores bancários continuam experimentais. Ainda não houve validação com uma conta real habilitada. Importação de arquivos e demonstração funcionam sem acesso bancário.
+A troca de SQLite para PostgreSQL não transfere o histórico automaticamente. Backups e atualização de uma instalação PostgreSQL ficam sob a hospedagem. A entrada no catálogo do Orbit depende da publicação da receita e do download anônimo da imagem no GHCR.
 
-Instalação: https://github.com/getcortexlabs/ranjit#instalar
+Os conectores bancários continuam experimentais e ainda não foram validados com uma conta real habilitada. A instalação começa com importação de extratos; conectar uma conta exige configurar o acesso à API correspondente.
+
+Instalação e integração: https://github.com/getcortexlabs/ranjit/blob/main/docs/server.md

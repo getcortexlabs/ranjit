@@ -1,10 +1,41 @@
 # Ranjit
 
-Um programa em Go para importar extratos, conectar suas próprias contas e consultar dados financeiros no navegador, no terminal ou por API.
+Um serviço open source em Go para integrar contas, saldos e transações ao seu backend.
 
-O Ranjit cuida da integração dentro da aplicação: estado da conexão, fila de sincronização, contas, saldos e transações. Inclui um sandbox local e conectores diretos para a própria conta Efí, Inter Empresas, Sicoob, C6 Empresas e Santander Empresas. A cobertura de dados depende do banco.
+Você instala o Ranjit uma vez e usa sua API pelo SDK Go. O serviço cuida dos conectores, importação de extratos, sincronização e armazenamento. Roda como binário ou container, com SQLite local ou PostgreSQL na hospedagem. SDKs para outras linguagens podem usar o mesmo contrato HTTP.
+
+```text
+seu aplicativo → seu backend → SDK Go → Ranjit → APIs bancárias / extratos
+                                          ↓
+                                  SQLite ou PostgreSQL
+```
 
 As integrações diretas usam as credenciais da aplicação criada pelo titular no banco. Para compartilhamento entre bancos pelo Open Finance, ainda é necessária uma operação habilitada e outro adaptador. Os [limites de acesso](docs/open-finance.md) estão documentados com as referências oficiais.
+
+## Usar no backend
+
+Para começar localmente, instale o binário abaixo, rode `ranjit serve` e obtenha a chave com `ranjit key`. No seu backend:
+
+```sh
+go get github.com/getcortexlabs/ranjit@v0.3.0
+export RANJIT_URL=http://localhost:8080
+# Configure RANJIT_API_KEY com a chave da sua instalação.
+```
+
+```go
+client, err := ranjit.NewClientFromEnv()
+if err != nil {
+    return err
+}
+page, err := client.SearchTransactions(ctx, ranjit.TransactionFilter{
+    CustomerID: authenticatedUserID,
+    Limit:      100,
+})
+```
+
+O SDK é um cliente HTTP: o Ranjit roda como processo separado do seu backend. A chave fica apenas no servidor. Seu aplicativo autentica os usuários e determina quais dados cada um pode acessar; `customer_id` sozinho não é uma permissão.
+
+O [exemplo de backend Go](examples/backend/) importa um CSV e consulta transações sem precisar de acesso bancário. O [guia de instalação em servidor e Orbit](docs/server.md) cobre PostgreSQL, segredos e a configuração do SDK. O painel e os comandos locais continuam disponíveis como ferramentas de apoio.
 
 ## Instalar
 
@@ -185,9 +216,9 @@ O [exemplo Go](examples/connect/main.go) mostra o fluxo completo. O contrato HTT
 
 ## Decisões do projeto
 
-Um binário, um banco e um worker. `net/http` faz o transporte; SQLite guarda os dados e a fila; o provedor só entrega lotes normalizados. O painel usa HTML, CSS e JavaScript embutidos no executável, sem etapa de build do frontend. Não há Redis, ORM ou framework web. O driver SQLite funciona sem CGO.
+Um binário, um banco e um worker. `net/http` faz o transporte; SQLite ou PostgreSQL guarda os dados e a fila; o provedor só entrega lotes normalizados. O painel usa HTML, CSS e JavaScript embutidos no executável, sem etapa de build do frontend. Não há Redis, ORM ou framework web. O driver SQLite funciona sem CGO.
 
-Os valores monetários usam centavos inteiros. As importações são atômicas e fazem upsert por identificador estável do provedor. As respostas de leitura já recebidas ficam temporariamente no SQLite, vinculadas ao job. A retomada mantém o período solicitado e reaproveita essas respostas; tokens e headers não entram nesse armazenamento. Os registros temporários são removidos ao concluir, falhar definitivamente, expirar ou revogar. O resultado de uma tentativa antiga é rejeitado, mesmo se chegar depois da nova tentativa.
+Os valores monetários usam centavos inteiros. As importações são atômicas e fazem upsert por identificador estável do provedor. As respostas de leitura já recebidas ficam temporariamente no banco de dados, vinculadas ao job. A retomada mantém o período solicitado e reaproveita essas respostas; tokens e headers não entram nesse armazenamento. Os registros temporários são removidos ao concluir, falhar definitivamente, expirar ou revogar. O resultado de uma tentativa antiga é rejeitado, mesmo se chegar depois da nova tentativa.
 
 Revogar uma conexão cancela seus jobs e apaga contas e transações na mesma transação. Em conexões diretas, pausar ou vencer o prazo local interrompe a coleta e preserva o histórico para consulta. O consentimento simulado continua bloqueando leitura e removendo dados quando vence.
 

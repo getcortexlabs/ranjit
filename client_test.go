@@ -31,3 +31,16 @@ func TestClientDoesNotFollowCredentialRedirects(t *testing.T) {
 		t.Fatal("client followed redirect with credentials")
 	}
 }
+
+func TestClientFromEnvironment(t *testing.T) {
+	t.Setenv("RANJIT_URL", "https://financial.example")
+	t.Setenv("RANJIT_API_KEY", "backend-service-key")
+	c, err := NewClientFromEnv()
+	if err != nil || c.baseURL != "https://financial.example" || c.apiKey != "backend-service-key" {
+		t.Fatal("environment client not configured", err)
+	}
+	t.Setenv("RANJIT_URL", "")
+	if _, err = NewClientFromEnv(); err == nil {
+		t.Fatal("missing service address accepted")
+	}
+}

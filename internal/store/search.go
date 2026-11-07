@@ -37,7 +37,11 @@ func (s *Store) SearchTransactions(ctx context.Context, f Search, now time.Time)
 		args = append(args, f.Account)
 	}
 	if f.Query != "" {
-		query += ` AND instr(lower(t.description),lower(?))>0`
+		if s.db.postgres {
+			query += ` AND strpos(lower(t.description),lower(?))>0`
+		} else {
+			query += ` AND instr(lower(t.description),lower(?))>0`
+		}
 		args = append(args, f.Query)
 	}
 	if f.From != "" {

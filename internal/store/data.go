@@ -42,7 +42,7 @@ func (s *Store) Complete(ctx context.Context, j ranjit.Job, batch provider.Snaps
 	return tx.Commit()
 }
 
-func writeSnapshot(ctx context.Context, tx *sql.Tx, connectionID string, batch provider.Snapshot, now time.Time) error {
+func writeSnapshot(ctx context.Context, tx *transaction, connectionID string, batch provider.Snapshot, now time.Time) error {
 	for _, a := range batch.Accounts {
 		id := ranjit.StableID("acc", connectionID, a.ExternalID)
 		at := a.BalanceAt
@@ -55,10 +55,10 @@ func writeSnapshot(ctx context.Context, tx *sql.Tx, connectionID string, batch p
 		_, err := tx.ExecContext(ctx, `INSERT INTO accounts (id, connection_id, external_id, name, type, balance_minor, currency, updated_at, balance_known, balance_at)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (connection_id, external_id) DO UPDATE SET
 			name = excluded.name, type = excluded.type, updated_at = excluded.updated_at,
-			balance_minor = CASE WHEN excluded.balance_known AND excluded.balance_at >= accounts.balance_at THEN excluded.balance_minor ELSE accounts.balance_minor END,
-			currency = CASE WHEN excluded.balance_known AND excluded.balance_at >= accounts.balance_at THEN excluded.currency ELSE accounts.currency END,
-			balance_known = MAX(accounts.balance_known, excluded.balance_known),
-			balance_at = CASE WHEN excluded.balance_known THEN MAX(accounts.balance_at, excluded.balance_at) ELSE accounts.balance_at END`,
+			balance_minor = CASE WHEN excluded.balance_known <> 0 AND excluded.balance_at >= accounts.balance_at THEN excluded.balance_minor ELSE accounts.balance_minor END,
+			currency = CASE WHEN excluded.balance_known <> 0 AND excluded.balance_at >= accounts.balance_at THEN excluded.currency ELSE accounts.currency END,
+			balance_known = CASE WHEN excluded.balance_known > accounts.balance_known THEN excluded.balance_known ELSE accounts.balance_known END,
+			balance_at = CASE WHEN excluded.balance_known <> 0 AND excluded.balance_at > accounts.balance_at THEN excluded.balance_at ELSE accounts.balance_at END`,
 			id, connectionID, a.ExternalID, a.Name, a.Type, a.Balance.AmountMinor, a.Balance.Currency, now.UnixMilli(), !a.BalanceUnknown, at.UnixMilli())
 		if err != nil {
 			return err

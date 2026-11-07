@@ -82,7 +82,7 @@ func run(logger *slog.Logger) error {
 		fmt.Print(help)
 		return nil
 	}
-	if os.Getenv("RANJIT_API_KEY") == "" {
+	if os.Getenv("RANJIT_API_KEY") == "" && os.Getenv("RANJIT_DATABASE_URL") == "" && os.Getenv("RANJIT_PROFILES_JSON") == "" {
 		if _, _, err := personal(true); err != nil {
 			return err
 		}

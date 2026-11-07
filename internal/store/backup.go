@@ -15,6 +15,9 @@ import (
 // Backup creates a consistent standalone SQLite snapshot without stopping readers.
 // An existing destination is never replaced, even if another process creates it.
 func (s *Store) Backup(ctx context.Context, destination string) error {
+	if s.db.postgres {
+		return errors.New("use PostgreSQL backups (pg_dump or your hosting provider) for this installation")
+	}
 	abs, err := filepath.Abs(destination)
 	if err != nil {
 		return err
@@ -105,6 +108,9 @@ func checkBackup(ctx context.Context, path string) error {
 // Restore keeps an automatic rollback copy before replacing an existing database.
 // All Ranjit processes hold a shared lock; restoration requires exclusive access.
 func Restore(ctx context.Context, source, destination string, replace bool) (string, error) {
+	if IsPostgres(source) || IsPostgres(destination) {
+		return "", errors.New("use PostgreSQL restore tools for this installation; SQLite backups cannot be restored into PostgreSQL")
+	}
 	src, err := filepath.Abs(source)
 	if err != nil {
 		return "", err
@@ -250,6 +256,9 @@ func (s *Store) checkpoint(ctx context.Context) error {
 
 // BackupStopped retains an exclusive lock until the caller completes an update.
 func BackupStopped(ctx context.Context, path, destination string) (func(), error) {
+	if IsPostgres(path) {
+		return nil, errors.New("back up PostgreSQL and update the server through your hosting provider")
+	}
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return nil, err

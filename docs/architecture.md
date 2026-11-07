@@ -1,9 +1,9 @@
 # Arquitetura
 
-O processo HTTP e o worker compartilham um SQLite. Esse recorte mantém o projeto fácil de instalar e permite testar as garantias de consistência sem depender de serviços externos. A instalação é de um único operador, com um servidor por arquivo de banco. Os comandos locais também podem abrir esse SQLite por períodos curtos, usando as mesmas transações e concessões de execução.
+O processo HTTP e o worker compartilham um banco. SQLite é o padrão local; PostgreSQL permite hospedar o serviço sem depender de um volume no container. O SDK Go faz chamadas HTTP ao serviço e não embute o motor no backend da aplicação. Cada instalação pertence a um operador. A aplicação consumidora autentica seus usuários e controla o acesso aos IDs.
 
 ```text
-aplicação → API HTTP → serviço / armazenamento → SQLite
+aplicação → API HTTP → serviço / armazenamento → SQLite ou PostgreSQL
 terminal → CLI ──────→ importação / consultas ──────↑
                                ↑                  ↑
                         consentimento           worker → perfis → provedores
@@ -29,7 +29,7 @@ terminal → CLI ──────→ importação / consultas ─────�
 | `internal/provider/santander` | Consulta de saldo e extrato Santander Empresas com offset |
 | `internal/worker` | Agendamento, tentativas e execução da sincronização |
 
-As consultas simples vão do handler ao armazenamento. O fluxo de consentimento passa pelo serviço. Não existe uma interface de repositório que apenas repete os métodos de um único banco. A interface de provedor existe porque essa é uma fronteira concreta de integração.
+As consultas simples vão do handler ao armazenamento. O fluxo de consentimento passa pelo serviço. Não existe uma interface de repositório que apenas repete os métodos dos bancos. A interface de provedor existe porque essa é uma fronteira concreta de integração.
 
 ## Consentimento
 
@@ -41,7 +41,7 @@ Os prazos de dez minutos e 90 dias pertencem ao sandbox. Não são configuraçõ
 
 No modo `api_credentials`, a criação verifica a aplicação bancária instalada pelo operador e grava a conexão ativa junto do primeiro job. Não passa pelo formulário de sandbox. O prazo local de 90 dias também limita essa coleta e fica no campo existente `consent_expires_at`; a validade bancária das credenciais é independente. `authorization_mode` distingue os dois fluxos.
 
-O hash do Client ID e do ambiente vincula a conexão à aplicação Efí. No Inter, o vínculo também inclui a conta selecionada. O conector rejeita outro vínculo antes de fazer chamadas bancárias. Secret, chave privada e certificado são lidos de arquivos locais; tokens OAuth ficam em memória. Revogar no Ranjit encerra o acesso local; desabilitar a aplicação no banco é uma operação separada.
+O hash do Client ID e do ambiente vincula a conexão à aplicação Efí. No Inter, o vínculo também inclui a conta selecionada. O conector rejeita outro vínculo antes de fazer chamadas bancárias. Secret, chave privada e certificado são lidos de arquivos ou referências explícitas `env:NOME`; tokens OAuth ficam em memória. Revogar no Ranjit encerra o acesso local; desabilitar a aplicação no banco é uma operação separada.
 
 ## Sincronização
 
@@ -49,7 +49,7 @@ Um índice parcial permite no máximo um job `queued` ou `running` por conexão.
 
 O worker verifica vencimentos, agenda conexões elegíveis e reivindica um job a cada passo. A reivindicação gera um token de execução e uma concessão de um minuto. A consulta ao provedor tem timeout de 20 segundos. Se o processo morrer, uma nova execução pode recuperar o job após esse minuto. Cada processo seleciona apenas conexões das instituições que conhece; adicionar um perfil pelo terminal exige reiniciar o servidor para disponibilizá-lo na API.
 
-Respostas GET bem-sucedidas ficam temporariamente em `sync_responses`, limitadas por job e protegidas pelo token de execução. São dados financeiros, sujeitos à mesma política de backup do SQLite. Tokens OAuth e headers não são persistidos. A chave da requisição é um hash, e o período é fixado na criação do job. Uma tentativa pode continuar de onde parou sem repetir as leituras concluídas. Ao atingir o timeout com progresso, o worker devolve o job à fila sem consumir uma tentativa de falha. Conclusão, falha definitiva, expiração ou revogação removem as respostas temporárias.
+Respostas GET bem-sucedidas ficam temporariamente em `sync_responses`, limitadas por job e protegidas pelo token de execução. São dados financeiros, sujeitos à mesma política de backup do banco. Tokens OAuth e headers não são persistidos. A chave da requisição é um hash, e o período é fixado na criação do job. Uma tentativa pode continuar de onde parou sem repetir as leituras concluídas. Ao atingir o timeout com progresso, o worker devolve o job à fila sem consumir uma tentativa de falha. Conclusão, falha definitiva, expiração ou revogação removem as respostas temporárias.
 
 Antes de importar, o armazenamento valida o lote e verifica novamente estado do consentimento, prazo e token de execução. Contas, transações, conclusão do job e data da última sincronização são gravados na mesma transação. Uma falha em qualquer escrita desfaz todas elas.
 
@@ -73,6 +73,16 @@ Migrações SQL ficam embutidas no binário e são registradas por nome. Novas m
 
 A retenção atual mantém metadados das conexões e o histórico dos jobs. A remoção dos dados financeiros ocorre ao revogar ou após o worker identificar um consentimento simulado vencido. A coleta direta pode expirar ou ser pausada sem apagar o histórico. Renovar verifica as credenciais vinculadas à conexão e invalida jobs anteriores antes de enfileirar uma nova coleta. DELETE lógico de linhas não garante eliminação de vestígios no arquivo, WAL ou backups; essa política precisa acompanhar a operação de armazenamento.
 
+
+## PostgreSQL
+
+`RANJIT_DATABASE_URL` seleciona PostgreSQL; `RANJIT_DATABASE` continua sendo um caminho SQLite. As migrações de cada engine ficam em diretórios separados. Trocar a configuração não migra dados existentes entre engines.
+
+A camada SQL compartilha consultas e limites transacionais. O adaptador PostgreSQL traduz parâmetros posicionais e representa os indicadores como inteiros. Usa pgx via `database/sql`, com até quatro conexões. Um advisory lock transacional por banco serializa importação, encerramento das conexões e conclusão de jobs, preservando a ordenação do SQLite inclusive entre processos. Não é uma promessa de escalabilidade horizontal: a receita inicial usa uma réplica.
+
+Migrações usam o mesmo lock e uma transação. Índices parciais, chaves estrangeiras e triggers preservam a unicidade dos jobs e a remoção dos checkpoints. Os testes de integração executam concorrência, reinício, deduplicação, rollback, busca e revogação em PostgreSQL real. CI e publicação de releases exigem esses testes.
+
+Backups e restauração são feitos por PostgreSQL ou pela hospedagem. Os comandos de manutenção de arquivo SQLite recusam uma instalação PostgreSQL. Credenciais bancárias e a chave da API são mantidas separadas do banco, nos segredos da hospedagem.
 
 ## Interface e manutenção
 

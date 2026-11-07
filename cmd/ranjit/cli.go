@@ -112,7 +112,7 @@ func personal(create bool) (config.Personal, string, error) {
 }
 
 func localConfig(create bool) (config.Config, error) {
-	if os.Getenv("RANJIT_CONFIG") == "" && os.Getenv("RANJIT_API_KEY") != "" {
+	if os.Getenv("RANJIT_DATABASE_URL") != "" || os.Getenv("RANJIT_PROFILES_JSON") != "" || (os.Getenv("RANJIT_CONFIG") == "" && os.Getenv("RANJIT_API_KEY") != "") {
 		return config.Load()
 	}
 	p, path, err := personal(create)

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -24,6 +25,16 @@ type APIError struct {
 	Code       string
 	Message    string
 	RequestID  string
+}
+
+// NewClientFromEnv reads the service address and key from backend configuration.
+// The key belongs on the server; never expose it in a browser or mobile client.
+func NewClientFromEnv() (*Client, error) {
+	baseURL := os.Getenv("RANJIT_URL")
+	if baseURL == "" {
+		return nil, fmt.Errorf("RANJIT_URL is required (for example http://localhost:8080)")
+	}
+	return NewClient(baseURL, os.Getenv("RANJIT_API_KEY"))
 }
 
 func (e *APIError) Error() string {

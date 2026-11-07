@@ -1,7 +1,9 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/url"
 	"os"
@@ -32,6 +34,14 @@ type Config struct {
 }
 
 func Load() (Config, error) {
+	serverURL := os.Getenv("RANJIT_DATABASE_URL")
+	profilesJSON, hasProfiles := os.LookupEnv("RANJIT_PROFILES_JSON")
+	if serverURL != "" || hasProfiles {
+		if os.Getenv("RANJIT_CONFIG") != "" || os.Getenv("RANJIT_API_KEY") == "" {
+			return Config{}, fmt.Errorf("server environment configuration requires RANJIT_API_KEY and cannot be combined with RANJIT_CONFIG")
+		}
+	}
+
 	if os.Getenv("RANJIT_CONFIG") != "" || os.Getenv("RANJIT_API_KEY") == "" {
 		path, err := PersonalPath()
 		if err != nil {
@@ -49,8 +59,34 @@ func Load() (Config, error) {
 	if len(c.APIKey) < 32 || strings.ContainsAny(c.APIKey, " \t\r\n") {
 		return c, fmt.Errorf("RANJIT_API_KEY must contain at least 32 bytes without whitespace; run 'ranjit init' to generate one")
 	}
+	if serverURL != "" {
+		u, err := url.Parse(serverURL)
+		if err != nil || (u.Scheme != "postgres" && u.Scheme != "postgresql") || u.Hostname() == "" || u.Fragment != "" {
+			return c, fmt.Errorf("RANJIT_DATABASE_URL must be a PostgreSQL URL")
+		}
+		c.Database = serverURL
+	} else if strings.Contains(c.Database, "://") {
+		return c, fmt.Errorf("use RANJIT_DATABASE_URL for PostgreSQL; RANJIT_DATABASE is a SQLite file path")
+	}
 	c.Provider = env("RANJIT_PROVIDER", "sandbox")
-	if c.Provider != "sandbox" && c.Provider != "efi" && c.Provider != "inter" && c.Provider != "sicoob" && c.Provider != "c6" && c.Provider != "santander" {
+	if hasProfiles {
+		if os.Getenv("RANJIT_PROVIDER") != "" {
+			return c, fmt.Errorf("use either RANJIT_PROFILES_JSON or RANJIT_PROVIDER")
+		}
+		if len(profilesJSON) > 1<<20 || !strings.HasPrefix(strings.TrimSpace(profilesJSON), "[") {
+			return c, fmt.Errorf("RANJIT_PROFILES_JSON must be a JSON array (maximum 1 MiB)")
+		}
+		d := json.NewDecoder(strings.NewReader(profilesJSON))
+		d.DisallowUnknownFields()
+		if err := d.Decode(&c.Profiles); err != nil || d.Decode(new(any)) != io.EOF {
+			return c, fmt.Errorf("invalid RANJIT_PROFILES_JSON; check field names and JSON syntax")
+		}
+		if err := validateProfiles(c.Profiles); err != nil {
+			return c, err
+		}
+		c.Provider = "profiles"
+	}
+	if c.Provider != "profiles" && c.Provider != "sandbox" && c.Provider != "efi" && c.Provider != "inter" && c.Provider != "sicoob" && c.Provider != "c6" && c.Provider != "santander" {
 		return c, fmt.Errorf("RANJIT_PROVIDER must be sandbox, efi, inter, sicoob, c6 or santander")
 	}
 	if c.Provider == "efi" {

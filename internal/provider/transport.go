@@ -4,23 +4,17 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
-	"io"
 	"net"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 )
 
-// ReadSecretFile keeps credentials out of environment values and error messages.
+// ReadSecretFile accepts a file path or an explicit env:VARIABLE reference.
+// Errors never include credential contents.
 func ReadSecretFile(path string) (string, error) {
-	file, err := os.Open(path)
+	secret, err := readCredential(path, 4096)
 	if err != nil {
-		return "", errors.New("cannot open bank client secret file")
-	}
-	defer file.Close()
-	secret, err := io.ReadAll(io.LimitReader(file, 4097))
-	if err != nil || len(secret) > 4096 {
 		return "", errors.New("cannot read bank client secret file")
 	}
 	value := strings.TrimSpace(string(secret))
@@ -33,7 +27,15 @@ func ReadSecretFile(path string) (string, error) {
 // NewMTLSClient uses system roots, a client certificate and bounded network timeouts.
 // Redirects are refused so bank credentials never follow a different destination.
 func NewMTLSClient(certificateFile, keyFile string) (*http.Client, error) {
-	cert, err := tls.LoadX509KeyPair(certificateFile, keyFile)
+	certificate, err := ReadPEM(certificateFile)
+	if err != nil {
+		return nil, err
+	}
+	key, err := ReadPEM(keyFile)
+	if err != nil {
+		return nil, err
+	}
+	cert, err := tls.X509KeyPair(certificate, key)
 	if err != nil {
 		return nil, errors.New("cannot load bank PEM certificate and private key")
 	}

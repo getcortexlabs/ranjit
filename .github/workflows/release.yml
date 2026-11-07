@@ -16,6 +16,19 @@ jobs:
   publish:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: ranjit
+          POSTGRES_PASSWORD: test-only-password
+          POSTGRES_DB: ranjit
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U ranjit"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      RANJIT_TEST_POSTGRES_URL: postgres://ranjit:test-only-password@localhost:5432/ranjit?sslmode=disable
     timeout-minutes: 30
     permissions:
       contents: write
