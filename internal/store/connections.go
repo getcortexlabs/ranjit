@@ -143,7 +143,7 @@ func (s *Store) Expire(ctx context.Context, now time.Time) error {
 		WHERE (provider <> 'file' AND status = 'active' AND consent_expires_at <= ?) OR (status = 'pending' AND authorization_expires_at <= ?)`, now.UnixMilli(), now.UnixMilli()); err != nil {
 		return err
 	}
-	if _, err = tx.ExecContext(ctx, `DELETE FROM accounts WHERE connection_id IN (SELECT id FROM connections WHERE status = 'expired')`); err != nil {
+	if _, err = tx.ExecContext(ctx, `DELETE FROM accounts WHERE connection_id IN (SELECT id FROM connections WHERE status = 'expired' AND provider = 'sandbox')`); err != nil {
 		return err
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE jobs SET status = 'cancelled', updated_at = ?, lease_token = '', lease_until = 0
@@ -167,4 +167,56 @@ func active(ctx context.Context, tx *sql.Tx, id string, now time.Time) error {
 		return ranjit.ErrConflict
 	}
 	return nil
+}
+
+// readable allows the owner to consult retained history after a direct grant ends.
+func readable(ctx context.Context, tx *sql.Tx, id string, now time.Time) error {
+	c, err := scanConnection(tx.QueryRowContext(ctx, `SELECT `+connectionColumns+` FROM connections WHERE id=?`, id))
+	if err != nil {
+		return err
+	}
+	if c.AuthorizationMode == "api_credentials" && (c.Status == "active" || c.Status == "expired" || c.Status == "paused") {
+		return nil
+	}
+	return active(ctx, tx, id, now)
+}
+
+func (s *Store) Pause(ctx context.Context, id string, now time.Time) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, `UPDATE connections SET status='paused' WHERE id=? AND authorization_mode='api_credentials' AND status IN ('active','expired','paused')`, id)
+	if err = changed(result, err, ranjit.ErrConflict); err != nil {
+		return err
+	}
+	if err = cancelJobs(ctx, tx, id, now); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func cancelJobs(ctx context.Context, tx *sql.Tx, id string, now time.Time) error {
+	_, err := tx.ExecContext(ctx, `UPDATE jobs SET status='cancelled',updated_at=?,lease_token='',lease_until=0 WHERE connection_id=? AND status IN ('queued','running')`, now.UnixMilli(), id)
+	return err
+}
+
+func (s *Store) Renew(ctx context.Context, id, binding string, deadline, now time.Time) (ranjit.Connection, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return ranjit.Connection{}, err
+	}
+	defer tx.Rollback()
+	c, err := scanConnection(tx.QueryRowContext(ctx, `UPDATE connections SET status='active',consent_expires_at=? WHERE id=? AND credential_id=? AND authorization_mode='api_credentials' AND status IN ('active','paused','expired') RETURNING `+connectionColumns, deadline.UnixMilli(), id, binding))
+	if err != nil {
+		return c, err
+	}
+	if err = cancelJobs(ctx, tx, id, now); err != nil {
+		return c, err
+	}
+	if _, err = enqueue(ctx, tx, id, now); err != nil {
+		return c, err
+	}
+	return c, tx.Commit()
 }

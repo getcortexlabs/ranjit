@@ -1,6 +1,6 @@
 # Ranjit
 
-Um programa em Go para importar extratos, conectar suas próprias contas e consultar dados financeiros no terminal ou por API.
+Um programa em Go para importar extratos, conectar suas próprias contas e consultar dados financeiros no navegador, no terminal ou por API.
 
 O Ranjit cuida da integração dentro da aplicação: estado da conexão, fila de sincronização, contas, saldos e transações. Inclui um sandbox local e conectores diretos para a própria conta Efí, Inter Empresas, Sicoob, C6 Empresas e Santander Empresas. A cobertura de dados depende do banco.
 
@@ -21,7 +21,13 @@ No Windows, baixe o ZIP correspondente ao processador em [Releases](https://gith
 
 ## Usar
 
-Para conhecer o fluxo com dados fictícios:
+O caminho mais curto é abrir o painel local:
+
+```sh
+ranjit ui
+```
+
+O comando cria a configuração, inicia o servidor e abre o navegador. Em **Importar extrato**, escolha um OFX ou CSV, confira a prévia e confirme. Para experimentar com dados fictícios:
 
 ```sh
 ranjit demo
@@ -62,13 +68,27 @@ O assistente pede o banco, o nome do perfil e os caminhos dos arquivos de creden
 
 A configuração pessoal fica na pasta de configuração do sistema, dentro de `ranjit/config.json`. O SQLite fica em `data/` ao lado desse arquivo. `RANJIT_CONFIG=/outro/caminho/config.json` permite uma instalação separada. Arquivos novos recebem permissão `0600` nos sistemas Unix.
 
+## No dia a dia
+
+```sh
+ranjit backup minha-copia.db
+ranjit service install
+ranjit update --check
+```
+
+O serviço inicia ao entrar no computador, sem exigir administrador. Para atualizar: `ranjit service stop`, `ranjit update` e `ranjit service start`. A atualização verifica o checksum, guarda o binário anterior e faz backup do banco existente. O painel e `ranjit doctor` avisam quando certificados estão perto de vencer.
+
+`ranjit pause ID` interrompe a coleta e mantém o histórico. `ranjit renew ID` verifica novamente o acesso e retoma a mesma conexão. Para restaurar, pare o serviço e use `ranjit restore --replace minha-copia.db`; a restauração guarda uma cópia anterior e deixa conexões bancárias pausadas. Os detalhes estão em [operação](docs/operations.md).
+
+`ranjit validate --report teste.json meu-perfil` testa o acesso configurado e gera um relatório sem valores, identificadores de conta ou credenciais. A conferência com o extrato oficial continua manual; [veja o procedimento](docs/validation.md).
+
 ## API e sincronização periódica
 
 ```sh
 ranjit serve
 ```
 
-A API escuta em `http://localhost:8080`. `ranjit key` mostra a chave para integrar seu backend; guarde-a como segredo. Para consulta no terminal, os comandos acima dispensam a API. `ranjit revoke ID` revoga uma conexão e remove seus dados financeiros locais.
+A API escuta em `http://localhost:8080`. O painel fica em `/app/`; `ranjit ui` abre uma sessão sem copiar a chave. `ranjit key` mostra a chave para integrar seu backend; guarde-a como segredo. Para consulta no terminal, os comandos acima dispensam a API. `ranjit revoke ID` revoga uma conexão e remove seus dados financeiros locais.
 
 ### Docker
 
@@ -128,7 +148,7 @@ Os três conectores têm testes locais com respostas simuladas. A homologação 
 
 ## Integrar
 
-Toda chamada em `/v1` usa `Authorization: Bearer <RANJIT_API_KEY>`. Essa chave pertence ao backend da aplicação. Ela permite acessar todos os clientes daquela instalação; `customer_id` é um identificador de agrupamento, não uma barreira de autorização entre usuários.
+Integrações com `/v1` usam `Authorization: Bearer <RANJIT_API_KEY>`. Essa chave pertence ao backend da aplicação. Ela permite acessar todos os clientes daquela instalação; `customer_id` é um identificador de agrupamento, não uma barreira de autorização entre usuários.
 
 ```sh
 set -a
@@ -148,6 +168,10 @@ O [exemplo Go](examples/connect/main.go) mostra o fluxo completo. O contrato HTT
 | Método | Caminho | Uso |
 | --- | --- | --- |
 | `POST` | `/v1/imports?customer_id=...&format=ofx` | Importar extrato local |
+| `POST` | `/v1/imports/preview` | Conferir extrato sem gravar |
+| `GET` | `/v1/transactions` | Buscar por conta, descrição e período |
+| `POST` | `/v1/connections/{id}/pause` | Pausar coleta e manter histórico |
+| `POST` | `/v1/connections/{id}/renew` | Verificar acesso e retomar coleta |
 | `GET` | `/v1/connections/{id}/status` | Ver progresso, contagens e datas dos lançamentos |
 | `GET` | `/v1/institutions` | Instituições configuradas e cobertura de dados |
 | `POST` | `/v1/connections` | Criar conexão; link de autorização no sandbox |
@@ -161,11 +185,11 @@ O [exemplo Go](examples/connect/main.go) mostra o fluxo completo. O contrato HTT
 
 ## Decisões do projeto
 
-Um binário, um banco e um worker. `net/http` faz o transporte; SQLite guarda os dados e a fila; o provedor só entrega lotes normalizados. Não há Redis, ORM ou framework web. O driver SQLite funciona sem CGO.
+Um binário, um banco e um worker. `net/http` faz o transporte; SQLite guarda os dados e a fila; o provedor só entrega lotes normalizados. O painel usa HTML, CSS e JavaScript embutidos no executável, sem etapa de build do frontend. Não há Redis, ORM ou framework web. O driver SQLite funciona sem CGO.
 
 Os valores monetários usam centavos inteiros. As importações são atômicas e fazem upsert por identificador estável do provedor. As respostas de leitura já recebidas ficam temporariamente no SQLite, vinculadas ao job. A retomada mantém o período solicitado e reaproveita essas respostas; tokens e headers não entram nesse armazenamento. Os registros temporários são removidos ao concluir, falhar definitivamente, expirar ou revogar. O resultado de uma tentativa antiga é rejeitado, mesmo se chegar depois da nova tentativa.
 
-Revogar uma conexão cancela seus jobs e apaga contas e transações na mesma transação. Os endpoints também conferem o vencimento do consentimento antes de liberar dados, sem depender da próxima execução do worker.
+Revogar uma conexão cancela seus jobs e apaga contas e transações na mesma transação. Em conexões diretas, pausar ou vencer o prazo local interrompe a coleta e preserva o histórico para consulta. O consentimento simulado continua bloqueando leitura e removendo dados quando vence.
 
 A [arquitetura](docs/architecture.md) explica os limites dos pacotes e os motivos dessas escolhas. O guia de [provedores](docs/providers.md) descreve o contrato que uma futura integração precisa cumprir.
 
@@ -178,6 +202,6 @@ make build     # bin/ranjit, sem CGO
 
 Os testes usam SQLite em diretórios temporários e exercitam os handlers HTTP reais com transporte em memória. Cobrem consentimento, autenticação, paginação, isolamento dos IDs entre conexões, rollback, repetição de sincronização, concorrência, expiração e retomada após reinício.
 
-Antes de operar fora da máquina local, leia [operação](docs/operations.md). A versão atual tem uma chave por instalação e banco sem criptografia em repouso. A configuração escolhe um provedor por processo: sandbox, Efí, Inter, Sicoob, C6 ou Santander. Cada conector direto acessa uma conta por instalação. Webhooks, múltiplos operadores, outros produtos bancários e PostgreSQL ficam para mudanças com casos de uso definidos.
+Antes de operar fora da máquina local, leia [operação](docs/operations.md). A versão atual tem uma chave por instalação e banco sem criptografia em repouso. A configuração pessoal admite vários perfis; cada perfil direto acessa a conta vinculada às suas credenciais. O modo legado por variáveis de ambiente seleciona um provedor por processo. Webhooks, múltiplos operadores, outros produtos bancários e PostgreSQL ficam para mudanças com casos de uso definidos.
 
 Contribuições: [CONTRIBUTING.md](CONTRIBUTING.md). Licença: [MIT](LICENSE).

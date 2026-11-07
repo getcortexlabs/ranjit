@@ -1,0 +1,11 @@
+{
+  "name": "ranjit-browser-tests",
+  "private": true,
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.0",
+    "prettier": "3.9.10"
+  }
+}

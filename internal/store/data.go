@@ -86,7 +86,7 @@ func (s *Store) Accounts(ctx context.Context, id, cursor string, limit int, now 
 		return page, err
 	}
 	defer tx.Rollback()
-	if err = active(ctx, tx, id, now); err != nil {
+	if err = readable(ctx, tx, id, now); err != nil {
 		return page, err
 	}
 	rows, err := tx.QueryContext(ctx, `SELECT id, connection_id, name, type, balance_minor, currency, updated_at, balance_known, balance_at FROM accounts
@@ -136,7 +136,7 @@ func (s *Store) Transactions(ctx context.Context, accountID, cursor string, limi
 	if err != nil {
 		return page, err
 	}
-	if err = active(ctx, tx, connectionID, now); err != nil {
+	if err = readable(ctx, tx, connectionID, now); err != nil {
 		return page, err
 	}
 	rows, err := tx.QueryContext(ctx, `SELECT id, account_id, description, amount_minor, currency, posted_on, status FROM transactions

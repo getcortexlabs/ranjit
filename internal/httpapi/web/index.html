@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>Ranjit · Suas contas</title>
+    <link rel="stylesheet" href="/app/app.css" />
+    <script src="/app/app.js" defer></script>
+  </head>
+  <body>
+    <section id="login" class="login" hidden>
+      <div class="brand">r<span>ranjit</span></div>
+      <h1>Suas contas.<br />No seu computador.</h1>
+      <p>Abra o painel com <code>ranjit ui</code> ou informe a chave local.</p>
+      <form id="login-form">
+        <label
+          >Chave de acesso<input
+            id="api-key"
+            type="password"
+            autocomplete="off"
+            required /></label
+        ><button>Entrar</button>
+      </form>
+      <p id="login-error" role="alert"></p>
+    </section>
+    <div id="workspace" hidden>
+      <aside>
+        <a class="brand" href="/app/" aria-label="Ranjit, início"
+          >r<span>ranjit</span></a
+        >
+        <div class="workspace-label">ESPAÇO PESSOAL</div>
+        <nav aria-label="Navegação principal">
+          <button data-view="overview" class="selected">
+            Visão geral <span>01</span></button
+          ><button data-view="transactions">Lançamentos <span>02</span></button
+          ><button data-view="import">Importar extrato <span>03</span></button
+          ><button data-view="settings">
+            Conexões e dados <span>04</span>
+          </button>
+        </nav>
+        <div class="local-note">
+          <span class="dot"></span> Armazenamento local
+          <p>Seus dados ficam nesta instalação.</p>
+        </div>
+      </aside>
+      <main>
+        <header>
+          <span id="breadcrumb">Meu espaço / Visão geral</span>
+          <div>
+            <span class="local-pill">LOCAL</span
+            ><button class="text-button" id="logout">Sair</button>
+          </div>
+        </header>
+        <div id="notice" role="status" aria-live="polite" hidden></div>
+        <section id="overview" class="view">
+          <div class="heading">
+            <div>
+              <p class="eyebrow">SEU DINHEIRO, DE PERTO</p>
+              <h1>Uma visão das suas contas.</h1>
+              <p>
+                Saldo informado, histórico preservado e tudo no mesmo lugar.
+              </p>
+            </div>
+            <button data-go="import">＋ Importar extrato</button>
+          </div>
+          <div class="stats">
+            <article>
+              <span>Saldo das contas com informação</span
+              ><strong id="balance">—</strong
+              ><small id="balance-note"
+                >Os saldos podem ter datas diferentes.</small
+              >
+            </article>
+            <article>
+              <span>Contas acompanhadas</span
+              ><strong id="account-count">0</strong
+              ><small id="connection-count">Nenhuma conexão</small>
+            </article>
+            <article>
+              <span>Lançamentos guardados</span
+              ><strong id="transaction-count">0</strong
+              ><small>Inclui o histórico de acessos pausados.</small>
+            </article>
+          </div>
+          <div class="section-heading">
+            <h2>Suas contas</h2>
+            <button class="text-button" data-go="settings">
+              Gerenciar conexões ↗
+            </button>
+          </div>
+          <div id="accounts" class="account-grid"></div>
+          <div class="section-heading">
+            <h2>Últimos lançamentos</h2>
+            <button class="text-button" data-go="transactions">
+              Ver todos ↗
+            </button>
+          </div>
+          <div id="recent"></div>
+        </section>
+        <section id="transactions" class="view" hidden>
+          <div class="heading">
+            <div>
+              <p class="eyebrow">HISTÓRICO</p>
+              <h1>Cada movimento, em detalhe.</h1>
+              <p>Pesquise descrições e escolha um período.</p>
+            </div>
+          </div>
+          <form id="filter-form" class="filters">
+            <label class="grow"
+              >Buscar<input
+                name="q"
+                placeholder="Ex.: mercado, salário, aluguel" /></label
+            ><label
+              >Conta<select name="account_id" id="filter-account">
+                <option value="">Todas as contas</option>
+              </select></label
+            ><label>De<input type="date" name="from" /></label
+            ><label>Até<input type="date" name="through" /></label
+            ><button>Filtrar</button>
+          </form>
+          <div id="transaction-list"></div>
+          <button id="more" class="secondary" hidden>Carregar mais</button>
+        </section>
+        <section id="import" class="view" hidden>
+          <div class="heading">
+            <div>
+              <p class="eyebrow">ARQUIVOS LOCAIS</p>
+              <h1>Traga seu extrato.</h1>
+              <p>Confira a prévia antes de guardar os lançamentos.</p>
+            </div>
+            <span class="step-label"
+              >01 ARQUIVO → 02 CONFERÊNCIA → 03 IMPORTAÇÃO</span
+            >
+          </div>
+          <form id="import-form">
+            <label class="dropzone" id="dropzone"
+              ><span class="file-icon">↥</span
+              ><strong>Escolha um arquivo OFX ou CSV</strong
+              ><span>Ou arraste o arquivo para cá. Até 8 MB.</span
+              ><input
+                id="statement-file"
+                type="file"
+                accept=".ofx,.qfx,.csv"
+                required
+            /></label>
+            <div class="import-options">
+              <label
+                >Nome da conta<input
+                  id="import-account"
+                  placeholder="Ex.: minha-conta" /></label
+              ><label
+                >Formato<select id="import-format">
+                  <option value="ofx">OFX</option>
+                  <option value="csv">CSV</option>
+                </select></label
+              >
+            </div>
+            <fieldset id="csv-options" hidden>
+              <legend>Formato do CSV</legend>
+              <div class="import-options">
+                <label
+                  >Separador de colunas<select id="delimiter">
+                    <option value="">Detectar</option>
+                    <option value=",">Vírgula</option>
+                    <option value=";">Ponto e vírgula</option>
+                    <option value="tab">Tabulação</option>
+                  </select></label
+                ><label
+                  >Separador decimal<select id="decimal">
+                    <option value=".">Ponto · 12.34</option>
+                    <option value=",">Vírgula · 12,34</option>
+                  </select></label
+                ><label
+                  >Datas<select id="date-format">
+                    <option value="">AAAA-MM-DD ou DD/MM/AAAA</option>
+                    <option value="01/02/2006">MM/DD/AAAA</option>
+                  </select></label
+                >
+              </div>
+              <div id="column-fields" class="import-options"></div>
+              <p class="hint">
+                Cada campo precisa de uma coluna diferente. Sem IDs, arquivos de
+                períodos sobrepostos serão recusados.
+              </p>
+            </fieldset>
+            <button id="preview-button">Conferir extrato</button>
+          </form>
+          <section id="preview" hidden>
+            <div class="section-heading">
+              <h2>Confira os lançamentos</h2>
+              <span class="local-pill">AINDA NÃO SALVO</span>
+            </div>
+            <p id="preview-summary"></p>
+            <div id="preview-table"></div>
+            <p class="hint">
+              Prévia dos primeiros 20 lançamentos. Todos os valores são em
+              reais.
+            </p>
+            <button id="confirm-import">Confirmar importação</button>
+          </section>
+        </section>
+        <section id="settings" class="view" hidden>
+          <div class="heading">
+            <div>
+              <p class="eyebrow">CONEXÕES E DADOS</p>
+              <h1>Você controla o acesso.</h1>
+              <p>Pausar interrompe a coleta. Seu histórico continua aqui.</p>
+            </div>
+          </div>
+          <div id="certificate-alerts" role="status"></div>
+          <div id="connections" class="connection-list"></div>
+          <article class="panel">
+            <h2>Adicionar uma conexão bancária</h2>
+            <p>
+              Configure suas credenciais com <code>ranjit configure</code> e
+              reinicie o servidor. Conectores bancários são experimentais e
+              exigem uma aplicação habilitada.
+            </p>
+            <form id="connect-form" class="filters">
+              <label class="grow"
+                >Integração configurada<select id="institution"></select></label
+              ><button>Conectar</button>
+            </form>
+          </article>
+          <div class="settings-grid">
+            <article class="panel">
+              <h2>Uma cópia dos seus dados</h2>
+              <p>
+                O backup guarda o histórico desta instalação. Credenciais de
+                bancos e a configuração ficam nos arquivos locais.
+              </p>
+              <code>ranjit backup minha-copia.db</code>
+              <p class="hint">
+                Para restaurar: pare o servidor e execute
+                <code>ranjit restore --replace minha-copia.db</code> (opções
+                antes do arquivo).
+              </p>
+            </article>
+            <article class="panel">
+              <h2>Pronto para o dia a dia</h2>
+              <p>
+                Inicie ao entrar no computador e confira avisos de certificados.
+              </p>
+              <code>ranjit service install</code>
+              <p>
+                <code>ranjit doctor</code> · <code>ranjit update --check</code>
+              </p>
+            </article>
+          </div>
+        </section>
+        <footer>
+          Ranjit <span>Open source. Feito para ficar com você.</span>
+        </footer>
+      </main>
+    </div>
+    <dialog id="delete-dialog">
+      <form method="dialog">
+        <p class="eyebrow">EXCLUSÃO DE DADOS</p>
+        <h2>Excluir esta conexão?</h2>
+        <p>
+          Contas e lançamentos desta conexão serão removidos. Essa ação não
+          apaga backups que você já fez.
+        </p>
+        <div class="actions">
+          <button value="cancel" class="secondary">Manter meus dados</button
+          ><button value="delete" class="danger">
+            Excluir conexão e dados
+          </button>
+        </div>
+      </form>
+    </dialog>
+  </body>
+</html>

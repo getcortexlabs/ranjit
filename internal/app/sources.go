@@ -73,3 +73,26 @@ func Profile(p config.Profile) (provider.Source, error) {
 		return nil, fmt.Errorf("unknown provider")
 	}
 }
+
+// Available lets local history remain accessible when a profile needs repair.
+// One-shot commands still use Source and report configuration failures directly.
+func Available(c config.Config) (provider.Source, func(), []string, error) {
+	if c.Provider != "profiles" {
+		s, close, err := Source(c)
+		return s, close, nil, err
+	}
+	r := provider.NewRegistry()
+	unavailable := []string{}
+	for _, p := range c.Profiles {
+		s, err := Profile(p)
+		if err != nil {
+			unavailable = append(unavailable, p.Name)
+			continue
+		}
+		if err = r.Add(p.Name, s); err != nil {
+			r.Close()
+			return nil, nil, nil, err
+		}
+	}
+	return r, r.Close, unavailable, nil
+}

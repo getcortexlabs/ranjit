@@ -1,11 +1,12 @@
-Primeira versão pública do Ranjit.
+Painel local e manutenção para uso pessoal.
 
-- Binários para Linux, macOS e Windows, em amd64 e arm64. Não exige Go nem servidor para importar e consultar extratos.
-- `ranjit demo`, `configure`, `doctor`, `import`, `accounts`, `transactions`, `status` e `sync`.
-- Importação OFX/CSV com valores inteiros, deduplicação e gravação atômica.
-- Perfis para várias contas e retomada de leituras bancárias interrompidas.
-- API HTTP, SDK Go, SQLite e imagem Docker sem root.
+- `ranjit ui` abre contas, saldos, pesquisa de lançamentos e importação no navegador, no mesmo binário Go.
+- Prévia de OFX/CSV e mapeamento de colunas antes de gravar.
+- Pausa e renovação de coleta sem perder o histórico das conexões diretas.
+- Backup consistente e restauração com cópia anterior e acesso bancário pausado.
+- Serviço do usuário para macOS, Linux e Windows; atualização com checksum e backup; avisos de validade de certificados.
+- `ranjit validate` gera relatório sem dados financeiros ou credenciais. Conferência do extrato continua manual.
 
-Os conectores Efí, Inter, Sicoob, C6 e Santander são experimentais: têm testes locais com respostas simuladas, mas ainda precisam de validação com contas habilitadas. A API de cada banco exige suas próprias credenciais. Importar um extrato local não exige habilitação bancária.
+Os conectores bancários continuam experimentais. Ainda não houve validação com uma conta real habilitada. Importação de arquivos e demonstração funcionam sem acesso bancário.
 
-Instalação e primeiros comandos: https://github.com/getcortexlabs/ranjit#instalar
+Instalação: https://github.com/getcortexlabs/ranjit#instalar

@@ -16,3 +16,10 @@ config.json
 *.key
 *.p12
 *.pfx
+
+/tests/browser/node_modules/
+/tests/browser/.tmp/
+/tests/browser/test-results/
+/tests/browser/playwright-report/
+*.db.lock
+ranjit-validation.json

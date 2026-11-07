@@ -49,6 +49,10 @@ type ConnectRequest struct {
 	InstitutionID string `json:"institution_id"`
 }
 
+func (c Connection) HistoryAvailable() bool {
+	return c.Status == "active" || c.AuthorizationMode == "api_credentials" && (c.Status == "paused" || c.Status == "expired")
+}
+
 type ConnectResponse struct {
 	Connection             Connection `json:"connection"`
 	AuthorizationURL       string     `json:"authorization_url,omitempty"`
@@ -110,6 +114,9 @@ type ConnectionStatus struct {
 }
 
 type ImportResult struct {
+	New           int    `json:"new"`
+	Updated       int    `json:"updated"`
+	Unchanged     int    `json:"unchanged"`
 	ConnectionID  string `json:"connection_id"`
 	Accounts      int    `json:"accounts"`
 	Transactions  int    `json:"transactions"`
@@ -129,4 +136,17 @@ func NewID(prefix string) string {
 func StableID(prefix, owner, externalID string) string {
 	sum := sha256.Sum256([]byte(owner + "\x00" + externalID))
 	return prefix + "_" + hex.EncodeToString(sum[:16])
+}
+
+// ImportPreview describes a dry run. Its connection ID may not exist yet.
+type ImportPreview struct {
+	Result  ImportResult   `json:"result"`
+	From    string         `json:"from"`
+	Through string         `json:"through"`
+	Sample  []ImportSample `json:"sample"`
+}
+type ImportSample struct {
+	PostedOn    string `json:"posted_on"`
+	Description string `json:"description"`
+	Amount      Money  `json:"amount"`
 }

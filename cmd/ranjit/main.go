@@ -33,6 +33,13 @@ func main() {
 }
 
 func run(logger *slog.Logger) error {
+	if len(os.Args) > 2 && os.Args[1] == "--config" {
+		if err := os.Setenv("RANJIT_CONFIG", os.Args[2]); err != nil {
+			return err
+		}
+		os.Args = append(os.Args[:1], os.Args[3:]...)
+	}
+	ui, noBrowser := false, false
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "init":
@@ -45,6 +52,19 @@ func run(logger *slog.Logger) error {
 			return nil
 		case "healthcheck":
 			return healthcheck()
+		case "ui":
+			f := flag.NewFlagSet("ui", flag.ContinueOnError)
+			f.BoolVar(&noBrowser, "no-browser", false, "mostrar link sem abrir navegador")
+			if err := f.Parse(os.Args[2:]); err != nil {
+				if errors.Is(err, flag.ErrHelp) {
+					return nil
+				}
+				return err
+			}
+			if f.NArg() != 0 {
+				return errors.New("use ranjit ui [--no-browser]")
+			}
+			ui = true
 		case "serve":
 			if len(os.Args) != 2 {
 				return errors.New("use ranjit serve")
@@ -73,18 +93,36 @@ func run(logger *slog.Logger) error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	if ui {
+		if err = checkLocalUI(cfg.BaseURL); err != nil {
+			return err
+		}
+		if link, e := dashboardLink(cfg); e == nil {
+			return showDashboard(link, noBrowser)
+		}
+	}
 	db, err := store.Open(ctx, cfg.Database)
 	if err != nil {
 		return err
 	}
 	defer db.Close()
-	source, closeSource, err := app.Source(cfg)
+	source, closeSource, unavailable, err := app.Available(cfg)
 	if err != nil {
 		return err
 	}
 	defer closeSource()
+	for _, name := range unavailable {
+		logger.Warn("profile unavailable; run ranjit doctor", "profile", name)
+	}
+	for _, cert := range cfg.Certificates(time.Now()) {
+		if cert.Level != "ok" {
+			logger.Warn("certificate needs attention", "profile", cert.Profile, "status", cert.Level, "days_remaining", cert.DaysRemaining)
+		}
+	}
 	svc := service.New(db, source, cfg.BaseURL)
-	server := &http.Server{Addr: cfg.Addr, Handler: httpapi.New(svc, cfg.APIKey, logger), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
+	server := &http.Server{Addr: cfg.Addr, Handler: httpapi.New(svc, cfg.APIKey, logger, httpapi.Diagnostics(func() any {
+		return map[string]any{"version": version, "certificates": cfg.Certificates(time.Now()), "unavailable_profiles": unavailable}
+	})), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	listener, err := net.Listen("tcp", cfg.Addr)
 	if err != nil {
 		return err
@@ -95,6 +133,18 @@ func run(logger *slog.Logger) error {
 	go func() { defer close(workerDone); worker.New(db, source, cfg.SyncInterval, logger).Run(workerCtx) }()
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- server.Serve(listener) }()
+	if ui {
+		link, e := dashboardLink(cfg)
+		if e != nil {
+			_ = server.Close()
+			cancelWorker()
+			<-workerDone
+			return e
+		}
+		if e = showDashboard(link, noBrowser); e != nil {
+			logger.Warn("open the displayed link in your browser")
+		}
+	}
 	logger.Info("ranjit started", "version", version, "addr", cfg.Addr, "provider", cfg.Provider)
 	select {
 	case <-ctx.Done():

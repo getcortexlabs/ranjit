@@ -71,4 +71,11 @@ O driver abre uma única conexão SQL, habilita chaves estrangeiras, WAL, `synch
 
 Migrações SQL ficam embutidas no binário e são registradas por nome. Novas mudanças de schema devem ganhar outro arquivo; migrações aplicadas não devem ser editadas. O início aplica as pendentes em uma transação. Reconstruções de tabela usam uma conexão SQL reservada, suspendem a execução das chaves estrangeiras durante a migração, verificam a integridade antes do commit e restauram sua execução antes de liberar a conexão. O teste de upgrade verifica que contas, transações e jobs existentes são preservados.
 
-A retenção atual mantém metadados das conexões e o histórico dos jobs. A remoção dos dados financeiros ocorre ao revogar ou após o worker identificar um consentimento vencido. DELETE lógico de linhas não garante eliminação de vestígios no arquivo, WAL ou backups; essa política precisa acompanhar a operação de armazenamento.
+A retenção atual mantém metadados das conexões e o histórico dos jobs. A remoção dos dados financeiros ocorre ao revogar ou após o worker identificar um consentimento simulado vencido. A coleta direta pode expirar ou ser pausada sem apagar o histórico. Renovar verifica as credenciais vinculadas à conexão e invalida jobs anteriores antes de enfileirar uma nova coleta. DELETE lógico de linhas não garante eliminação de vestígios no arquivo, WAL ou backups; essa política precisa acompanhar a operação de armazenamento.
+
+
+## Interface e manutenção
+
+O painel é servido por `internal/httpapi` com `go:embed`, sem CDN ou dependências de frontend em produção. A API continua sendo a fronteira de dados. Sessões locais são mantidas em memória; mutações por cookie exigem origem correspondente. O comando `ui` usa um link descartável em fragmento para não colocar a chave do operador no navegador.
+
+`internal/autostart` renderiza serviços por usuário para os três sistemas suportados. `internal/updater` verifica assets estáveis do repositório e troca o executável mantendo a versão anterior. A camada de armazenamento coordena manutenção com locks compartilhados no uso normal e exclusivos em restauração/atualização. `VACUUM INTO` produz backups independentes do WAL; restauração valida, migra em arquivo temporário e publica apenas o resultado completo. Os testes de navegador ficam separados em `tests/browser`; Node e Playwright são dependências de desenvolvimento.

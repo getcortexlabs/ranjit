@@ -28,8 +28,10 @@ type Statement struct {
 }
 
 type Options struct {
-	Format  string
-	Account string
+	Columns   map[string]string
+	Delimiter string
+	Format    string
+	Account   string
 	// Decimal is "." or ","; grouping separators are never guessed.
 	Decimal    string
 	DateFormat string

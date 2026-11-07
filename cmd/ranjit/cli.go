@@ -18,6 +18,7 @@ import (
 const help = `Ranjit — suas contas, no seu computador.
 
 Comece sem credenciais bancárias:
+  ranjit ui                             Abrir o painel no navegador
   ranjit demo                           Experimentar com dados fictícios
   ranjit import extrato.ofx              Importar um extrato OFX
   ranjit import --account pessoal extrato.csv
@@ -33,6 +34,13 @@ Conexão automática (exige acesso à API do banco):
   ranjit serve                          API local e sincronização periódica
 
 Outros comandos:
+  ranjit pause ID                        Pausar coleta, preservando histórico
+  ranjit renew ID                        Renovar acesso e retomar coleta
+  ranjit backup copia.db                 Salvar cópia consistente dos dados
+  ranjit restore --replace copia.db      Restaurar com o serviço parado
+  ranjit service install                Iniciar ao entrar no computador
+  ranjit update                         Atualizar para a versão estável
+  ranjit validate perfil                Testar acesso e gerar relatório local
   ranjit revoke ID                       Revogar conexão e apagar seus dados
   ranjit key                            Mostrar chave da API local
   ranjit version                        Mostrar versão
@@ -60,6 +68,14 @@ func (c cli) command(ctx context.Context, args []string) error {
 		return nil
 	case "configure":
 		return c.configure(args[1:])
+	case "backup", "restore", "pause", "renew":
+		return c.maintenance(ctx, args[0], args[1:])
+	case "service":
+		return c.serviceCommand(ctx, args[1:])
+	case "update":
+		return c.update(ctx, args[1:])
+	case "validate":
+		return c.validate(ctx, args[1:])
 	case "doctor":
 		return c.doctor(ctx, args[1:])
 	case "import":

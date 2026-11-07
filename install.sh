@@ -2,7 +2,7 @@
 # Install a released binary in the current user's directory. No sudo, Go or Docker.
 set -eu
 
-version=${RANJIT_VERSION:-v0.1.0}
+version=${RANJIT_VERSION:-v0.2.0}
 destination=${RANJIT_INSTALL_DIR:-"$HOME/.local/bin"}
 mode=binary
 case "${1:-}" in --docker) mode=docker ;; '') ;; *) echo 'Usage: sh install.sh [--docker]' >&2; exit 1 ;; esac
@@ -59,4 +59,4 @@ mkdir -p "$destination"
 install -m 755 "$temporary/ranjit" "$destination/.ranjit-install-$$"
 mv -f "$destination/.ranjit-install-$$" "$destination/ranjit"
 printf 'Ranjit %s installed: %s/ranjit\n' "$version" "$destination"
-case ":$PATH:" in *":$destination:"*) printf 'Try: ranjit demo\n' ;; *) printf 'Add this directory to your PATH: %s\nTry: "%s/ranjit" demo\n' "$destination" "$destination" ;; esac
+case ":$PATH:" in *":$destination:"*) printf 'Try: ranjit ui\n' ;; *) printf 'Add this directory to your PATH: %s\nTry: "%s/ranjit" ui\n' "$destination" "$destination" ;; esac

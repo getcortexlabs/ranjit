@@ -61,7 +61,7 @@ func (c cli) inspect(ctx context.Context, command string, args []string) error {
 			statuses = append(statuses, status)
 			continue
 		}
-		if connection.Status != "active" {
+		if !connection.HistoryAvailable() {
 			continue
 		}
 		cursor := ""

@@ -102,6 +102,8 @@ func (c *Client) Status(ctx context.Context, connectionID string) (ConnectionSta
 }
 
 type ImportOptions struct {
+	Columns    map[string]string
+	Delimiter  string
 	CustomerID string
 	Account    string
 	Format     string
@@ -112,20 +114,61 @@ type ImportOptions struct {
 // Import uploads a local OFX/CSV export. Requests are limited to 8 MiB.
 func (c *Client) Import(ctx context.Context, input io.Reader, opts ImportOptions) (ImportResult, error) {
 	var out ImportResult
+	err := c.upload(ctx, "/v1/imports", input, opts, &out)
+	return out, err
+}
+func (c *Client) PreviewImport(ctx context.Context, input io.Reader, opts ImportOptions) (ImportPreview, error) {
+	var out ImportPreview
+	err := c.upload(ctx, "/v1/imports/preview", input, opts, &out)
+	return out, err
+}
+func (c *Client) upload(ctx context.Context, path string, input io.Reader, opts ImportOptions, out any) error {
 	data, err := io.ReadAll(io.LimitReader(input, (8<<20)+1))
 	if err != nil {
-		return out, err
+		return err
 	}
 	if len(data) > 8<<20 {
-		return out, fmt.Errorf("statement exceeds 8 MiB")
+		return fmt.Errorf("statement exceeds 8 MiB")
 	}
-	q := url.Values{"customer_id": {opts.CustomerID}, "account": {opts.Account}, "format": {opts.Format}, "decimal": {opts.Decimal}, "date_format": {opts.DateFormat}}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/v1/imports?"+q.Encode(), bytes.NewReader(data))
+	q := url.Values{"customer_id": {opts.CustomerID}, "account": {opts.Account}, "format": {opts.Format}, "decimal": {opts.Decimal}, "date_format": {opts.DateFormat}, "delimiter": {opts.Delimiter}}
+	for field, column := range opts.Columns {
+		switch field {
+		case "date", "description", "amount", "id":
+			q.Set(field+"_column", column)
+		default:
+			return fmt.Errorf("unknown CSV field %q", field)
+		}
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path+"?"+q.Encode(), bytes.NewReader(data))
 	if err != nil {
-		return out, err
+		return err
 	}
 	req.Header.Set("Content-Type", "application/octet-stream")
-	err = c.send(req, &out)
+	return c.send(req, out)
+}
+func (c *Client) Pause(ctx context.Context, id string) error {
+	return c.do(ctx, http.MethodPost, "/v1/connections/"+url.PathEscape(id)+"/pause", nil, nil)
+}
+func (c *Client) Renew(ctx context.Context, id string) (Connection, error) {
+	var out Connection
+	err := c.do(ctx, http.MethodPost, "/v1/connections/"+url.PathEscape(id)+"/renew", nil, &out)
+	return out, err
+}
+
+type TransactionFilter struct {
+	CustomerID, AccountID, Query, From, Through, Cursor string
+	Limit                                               int
+}
+
+func (c *Client) SearchTransactions(ctx context.Context, f TransactionFilter) (Page[Transaction], error) {
+	var out Page[Transaction]
+	q := pageQuery(f.Cursor, f.Limit)
+	q.Set("customer_id", f.CustomerID)
+	q.Set("account_id", f.AccountID)
+	q.Set("q", f.Query)
+	q.Set("from", f.From)
+	q.Set("through", f.Through)
+	err := c.do(ctx, http.MethodGet, "/v1/transactions?"+q.Encode(), nil, &out)
 	return out, err
 }
 

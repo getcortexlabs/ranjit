@@ -13,18 +13,27 @@ import (
 	"time"
 
 	"github.com/getcortexlabs/ranjit"
+	"github.com/getcortexlabs/ranjit/internal/filelock"
 	_ "modernc.org/sqlite"
 )
 
 //go:embed migrations/*.sql
 var migrations embed.FS
 
-type Store struct{ db *sql.DB }
+type Store struct {
+	db    *sql.DB
+	guard *filelock.Lock
+}
 
-func Open(ctx context.Context, path string) (*Store, error) {
+func Open(ctx context.Context, path string) (*Store, error) { return open(ctx, path, true) }
+
+func open(ctx context.Context, path string, acquire bool) (*Store, error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return nil, err
+	}
+	if strings.HasPrefix(filepath.ToSlash(abs), "//") {
+		return nil, errors.New("SQLite requires a local disk")
 	}
 	if err = os.MkdirAll(filepath.Dir(abs), 0700); err != nil {
 		return nil, err
@@ -36,15 +45,20 @@ func Open(ctx context.Context, path string) (*Store, error) {
 	if err = f.Close(); err != nil {
 		return nil, err
 	}
-	uriPath := filepath.ToSlash(abs)
-	if strings.HasPrefix(uriPath, "//") {
-		return nil, errors.New("SQLite requires a local disk; network paths are not supported")
+	var guard *filelock.Lock
+	if acquire {
+		guard, err = filelock.Acquire(abs+".lock", false)
+		if err != nil {
+			return nil, err
+		}
 	}
-	// file:///C:/... is a path; file://C:/... would make C: an authority.
-	if volume := filepath.VolumeName(abs); len(volume) == 2 && volume[1] == ':' {
-		uriPath = "/" + uriPath
-	}
-	u := url.URL{Scheme: "file", Path: uriPath}
+	success := false
+	defer func() {
+		if !success && guard != nil {
+			guard.Close()
+		}
+	}()
+	u := databaseURL(abs)
 	q := url.Values{"_pragma": {"foreign_keys(1)", "busy_timeout(5000)", "journal_mode(WAL)", "synchronous(FULL)"}, "_txlock": {"immediate"}}
 	u.RawQuery = q.Encode()
 	db, err := sql.Open("sqlite", u.String())
@@ -53,15 +67,23 @@ func Open(ctx context.Context, path string) (*Store, error) {
 	}
 	// One writer per installation. WAL still permits external backup readers.
 	db.SetMaxOpenConns(1)
-	s := &Store{db: db}
+	s := &Store{db: db, guard: guard}
 	if err = s.migrate(ctx); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
+	success = true
 	return s, nil
 }
 
-func (s *Store) Close() error                   { return s.db.Close() }
+func (s *Store) Close() error {
+	err := s.db.Close()
+	if s.guard != nil {
+		err = errors.Join(err, s.guard.Close())
+		s.guard = nil
+	}
+	return err
+}
 func (s *Store) Ping(ctx context.Context) error { return s.db.PingContext(ctx) }
 
 func (s *Store) migrate(ctx context.Context) (resultErr error) {
@@ -164,4 +186,12 @@ func changed(result sql.Result, err error, otherwise error) error {
 		return otherwise
 	}
 	return nil
+}
+
+func databaseURL(path string) url.URL {
+	uriPath := filepath.ToSlash(path)
+	if volume := filepath.VolumeName(path); len(volume) == 2 && volume[1] == ':' {
+		uriPath = "/" + uriPath
+	}
+	return url.URL{Scheme: "file", Path: uriPath}
 }

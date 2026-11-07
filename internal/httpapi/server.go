@@ -20,14 +20,29 @@ import (
 )
 
 type Server struct {
-	service *service.Service
-	key     [32]byte
-	logger  *slog.Logger
+	sessions sessions
+	service  *service.Service
+	key      [32]byte
+	logger   *slog.Logger
 }
 
-func New(s *service.Service, apiKey string, logger *slog.Logger) http.Handler {
+// Option adds authenticated operational information without exposing credentials.
+type Option func(*http.ServeMux)
+
+func Diagnostics(fn func() any) Option {
+	return func(mux *http.ServeMux) {
+		mux.HandleFunc("GET /v1/diagnostics", func(w http.ResponseWriter, r *http.Request) { write(w, 200, fn()) })
+	}
+}
+
+func New(s *service.Service, apiKey string, logger *slog.Logger, options ...Option) http.Handler {
 	h := &Server{service: s, key: sha256.Sum256([]byte(apiKey)), logger: logger}
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /app", h.dashboard)
+	mux.HandleFunc("GET /app/", h.dashboard)
+	mux.HandleFunc("POST /ui/session", h.uiSession)
+	mux.HandleFunc("POST /ui/logout", h.uiLogout)
+	mux.Handle("POST /ui/link", h.authenticate(http.HandlerFunc(h.uiLink)))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		write(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
@@ -41,6 +56,9 @@ func New(s *service.Service, apiKey string, logger *slog.Logger) http.Handler {
 	mux.HandleFunc("GET /sandbox/authorize", h.consentPage)
 	mux.HandleFunc("POST /sandbox/authorize", h.decide)
 	api := http.NewServeMux()
+	for _, option := range options {
+		option(api)
+	}
 	api.HandleFunc("GET /v1/institutions", func(w http.ResponseWriter, r *http.Request) {
 		write(w, http.StatusOK, ranjit.Page[ranjit.Institution]{Data: s.Source.Institutions()})
 	})
@@ -49,10 +67,15 @@ func New(s *service.Service, apiKey string, logger *slog.Logger) http.Handler {
 	api.HandleFunc("GET /v1/connections/{id}", h.connection)
 	api.HandleFunc("DELETE /v1/connections/{id}", h.revoke)
 	api.HandleFunc("POST /v1/connections/{id}/sync", h.sync)
+	api.HandleFunc("POST /v1/connections/{id}/pause", h.pause)
+	api.HandleFunc("POST /v1/connections/{id}/renew", h.renew)
 	api.HandleFunc("GET /v1/connections/{id}/accounts", h.accounts)
 	api.HandleFunc("GET /v1/accounts/{id}/transactions", h.transactions)
 	api.HandleFunc("GET /v1/jobs/{id}", h.job)
+	api.HandleFunc("GET /v1/transactions", h.searchTransactions)
 	api.HandleFunc("POST /v1/imports", h.importStatement)
+	api.HandleFunc("POST /v1/imports/preview", h.previewImport)
+	api.HandleFunc("POST /v1/imports/columns", h.csvHeaders)
 	api.HandleFunc("GET /v1/connections/{id}/status", h.status)
 	mux.Handle("/v1/", h.authenticate(api))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { h.problem(w, ranjit.ErrNotFound) })
@@ -61,6 +84,12 @@ func New(s *service.Service, apiKey string, logger *slog.Logger) http.Handler {
 
 func (h *Server) authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") == "" && localBrowser(r) && sameOrigin(r) {
+			if cookie, err := r.Cookie("ranjit_session"); err == nil && h.sessions.valid(cookie.Value, false) {
+				next.ServeHTTP(w, r)
+				return
+			}
+		}
 		prefix, token, ok := strings.Cut(r.Header.Get("Authorization"), " ")
 		got := sha256.Sum256([]byte(token))
 		if !ok || !strings.EqualFold(prefix, "Bearer") || token == "" || subtle.ConstantTimeCompare(got[:], h.key[:]) != 1 {
@@ -109,7 +138,7 @@ func (h *Server) middleware(next http.Handler) http.Handler {
 			h.logger.Info("request", "request_id", id, "method", r.Method, "status", rw.status, "duration_ms", time.Since(start).Milliseconds())
 		}()
 		limit := int64(16 << 10)
-		if r.Method == http.MethodPost && r.URL.Path == "/v1/imports" {
+		if r.Method == http.MethodPost && (r.URL.Path == "/v1/imports" || r.URL.Path == "/v1/imports/preview" || r.URL.Path == "/v1/imports/columns") {
 			limit = statement.MaxBytes
 		}
 		r.Body = http.MaxBytesReader(rw, r.Body, limit)

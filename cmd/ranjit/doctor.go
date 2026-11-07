@@ -33,6 +33,11 @@ func (c cli) doctor(ctx context.Context, args []string) error {
 		return err
 	}
 	fmt.Fprintln(c.out, "OK  banco local e configuração")
+	for _, cert := range cfg.Certificates(time.Now()) {
+		if cert.Level != "ok" {
+			fmt.Fprintf(c.out, "AVISO  %s: certificado %s (%d dias restantes)\n", cert.Profile, cert.Level, cert.DaysRemaining)
+		}
+	}
 	profiles := cfg.Profiles
 	if cfg.Provider != "profiles" {
 		source, closeSource, err := app.Source(cfg)

@@ -4,7 +4,7 @@ O contrato está em [openapi.json](openapi.json). As respostas usam JSON, exceto
 
 ## Chave e cliente
 
-Use `Authorization: Bearer <chave>` em todas as rotas `/v1`. A instalação representa um único operador. A chave não distingue clientes finais; o backend que chama o Ranjit deve validar qual usuário pode acessar cada conexão. Não envie a chave para JavaScript no navegador, aplicativos distribuídos ou URLs.
+Use `Authorization: Bearer <chave>` em todas as rotas `/v1`. A instalação representa um único operador. A chave não distingue clientes finais; o backend que chama o Ranjit deve validar qual usuário pode acessar cada conexão. Use a chave apenas no backend de integrações. O painel embutido troca um link temporário por uma sessão local; o cookie também autentica `/v1`, com verificação de origem para mutações. A chave nunca vai na URL.
 
 `GET /healthz` e `GET /readyz` não exigem autenticação. O primeiro verifica que o processo responde; o segundo também consulta o banco.
 
@@ -29,8 +29,9 @@ No sandbox, a resposta 201 contém `connection`, `authorization_url` e `authoriz
 | `denied` | Compartilhamento recusado |
 | `expired` | Link ou consentimento vencido |
 | `revoked` | Conexão revogada pela aplicação |
+| `paused` | Coleta direta pausada, histórico disponível |
 
-Não há renovação de consentimento nesta versão. Crie outra conexão. Uma conexão ativa pode estar temporariamente sem dados enquanto a primeira sincronização roda.
+Para sandbox vencido, crie outra conexão. Conexões diretas aceitam `POST /v1/connections/{id}/pause` (204) e `/renew` (200, conexão). Renovar verifica a mesma identidade de credenciais, reinicia o prazo local de 90 dias e enfileira uma sincronização; não altera o consentimento ou a habilitação no banco. Uma conexão ativa pode estar temporariamente sem dados enquanto a primeira sincronização roda.
 
 ## Jobs
 
@@ -61,7 +62,7 @@ Isso representa um débito de R$ 45,90. Não use `float` para armazenar esse val
 
 `DELETE /v1/connections/{id}` retorna 204 depois de revogar localmente, invalidar o link, cancelar jobs ativos e apagar contas e transações. Repetir para uma conexão já revogada também retorna 204. O registro da conexão e os jobs permanecem para consulta. Para os conectores diretos, revogar a credencial bancária exige desabilitar a aplicação no respectivo banco; o DELETE encerra somente o acesso local.
 
-Leituras de contas de uma conexão inativa retornam 409. Uma conta já apagada retorna 404 ao consultar suas transações. Expiração também bloqueia acesso imediatamente; a limpeza física de linhas ocorre no próximo passo do worker.
+Conexões diretas em `paused` ou `expired` permitem consultar o histórico, mas não sincronizar. No sandbox, a expiração bloqueia leitura imediatamente e o worker remove os dados. Conexões revogadas retornam 409 para contas; transações de contas já apagadas retornam 404.
 
 ## Erros
 
@@ -97,3 +98,14 @@ O corpo de entrada é limitado a 16 KiB; JSON com campos desconhecidos ou conte�
 `Account.balance` pode ser `null` quando o arquivo não informa saldo; não interprete como zero. `balance_at` indica quando o saldo foi lido ou a data do saldo no OFX. `type` também pode ser `credit_card`.
 
 Com perfis, os IDs retornados por `/v1/institutions` têm o formato `perfil:instituição`; use o valor retornado, sem montá-lo por conta própria. Cada instituição informa `profile` e `validation` (`experimental` para conectores bancários; `simulated` no sandbox). Credenciais continuam fora da API.
+
+
+## Prévia, mapeamento e busca
+
+`POST /v1/imports/preview` recebe o mesmo arquivo e parâmetros de `/v1/imports`. Retorna `result`, `from`, `through` e `sample` (até 20 itens com `posted_on`, `description` e `amount`). Não persiste conexão nem lançamentos. Em ambos os endpoints, `new`, `updated` e `unchanged` contam o resultado por ID; a confirmação recalcula tudo em uma transação, pois o banco pode ter mudado desde a prévia.
+
+CSV aceita `delimiter` (`,` / `;` / `tab`), `date_column`, `description_column`, `amount_column` e `id_column`, usando os nomes do cabeçalho. Colunas vazias mantêm a detecção automática. `POST /v1/imports/columns?delimiter=...` recebe o CSV e devolve `columns`, sem gravar. Reinterpretar um arquivo já importado com valores diferentes é recusado.
+
+`GET /v1/transactions?customer_id=personal&q=mercado&from=2026-11-01&through=2026-11-30` busca em todas as contas desse agrupamento; `account_id` restringe uma conta. Datas são inclusivas. A busca textual trata `%` e `_` como caracteres comuns; a conversão de caixa do SQLite é limitada a ASCII. A ordenação é por `posted_on` e ID, decrescente, com `limit` e `cursor`.
+
+`GET /v1/diagnostics` informa versão, perfis indisponíveis e validade de certificados. Não retorna caminhos, sujeitos dos certificados ou credenciais. A rota existe no servidor do binário; bibliotecas que montam seu próprio handler podem fornecê-la com `httpapi.Diagnostics`.

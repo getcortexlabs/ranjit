@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/getcortexlabs/ranjit"
+	"github.com/getcortexlabs/ranjit/internal/store"
 )
 
 func (h *Server) connect(w http.ResponseWriter, r *http.Request) {
@@ -68,6 +69,22 @@ func (h *Server) sync(w http.ResponseWriter, r *http.Request) {
 	write(w, http.StatusAccepted, result)
 }
 
+func (h *Server) pause(w http.ResponseWriter, r *http.Request) {
+	if err := h.service.Store.Pause(r.Context(), r.PathValue("id"), h.service.Now()); err != nil {
+		h.problem(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+func (h *Server) renew(w http.ResponseWriter, r *http.Request) {
+	c, err := h.service.Renew(r.Context(), r.PathValue("id"))
+	if err != nil {
+		h.problem(w, err)
+		return
+	}
+	write(w, http.StatusOK, c)
+}
+
 func (h *Server) accounts(w http.ResponseWriter, r *http.Request) {
 	cursor, limit, err := pagination(r)
 	if err != nil {
@@ -103,4 +120,19 @@ func (h *Server) job(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	write(w, http.StatusOK, result)
+}
+
+func (h *Server) searchTransactions(w http.ResponseWriter, r *http.Request) {
+	cursor, limit, err := pagination(r)
+	if err != nil {
+		h.problem(w, err)
+		return
+	}
+	q := r.URL.Query()
+	result, err := h.service.Store.SearchTransactions(r.Context(), store.Search{Customer: q.Get("customer_id"), Account: q.Get("account_id"), Query: q.Get("q"), From: q.Get("from"), Through: q.Get("through"), Cursor: cursor, Limit: limit}, h.service.Now())
+	if err != nil {
+		h.problem(w, err)
+		return
+	}
+	write(w, 200, result)
 }

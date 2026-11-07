@@ -95,6 +95,11 @@ func (c cli) sync(ctx context.Context, command string, args []string) error {
 			}
 		}
 		if connection.ID == "" {
+			for _, existing := range connections {
+				if existing.InstitutionID == i.ID && existing.AuthorizationMode == "api_credentials" && (existing.Status == "paused" || existing.Status == "expired") {
+					return fmt.Errorf("acesso pausado ou vencido; use ranjit renew %s para manter o histórico", existing.ID)
+				}
+			}
 			response, err := svc.Connect(ctx, ranjit.ConnectRequest{CustomerID: "personal", InstitutionID: i.ID})
 			if err != nil {
 				return err

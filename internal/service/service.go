@@ -100,3 +100,28 @@ func tokenHash(token string) string {
 	hash := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(hash[:])
 }
+
+func (s *Service) Renew(ctx context.Context, id string) (ranjit.Connection, error) {
+	c, err := s.Store.Connection(ctx, id, s.Now())
+	if err != nil {
+		return c, err
+	}
+	if c.AuthorizationMode != "api_credentials" || !c.HistoryAvailable() {
+		return c, ranjit.ErrConflict
+	}
+	selected := s.Source
+	if r, ok := selected.(*provider.Registry); ok {
+		selected, _, err = r.Resolve(c.InstitutionID)
+		if err != nil {
+			return c, err
+		}
+	}
+	bank, ok := selected.(provider.CredentialSource)
+	if !ok || bank.CredentialID() != c.CredentialID {
+		return c, ranjit.ErrProviderCredentials
+	}
+	if err = bank.Verify(ctx); err != nil {
+		return c, err
+	}
+	return s.Store.Renew(ctx, id, c.CredentialID, s.Now().Add(ConsentTTL), s.Now())
+}

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Ranjit API",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "description": "Self-hosted financial data API with a local sandbox and direct Efí / Inter Empresas adapters. Bank account access requires credentials issued to the operator; coverage depends on the provider.",
     "license": {
       "name": "MIT",
@@ -18,6 +18,9 @@
   "security": [
     {
       "bearerAuth": []
+    },
+    {
+      "localSession": []
     }
   ],
   "paths": {
@@ -629,6 +632,51 @@
               "type": "string"
             },
             "description": "Optional Go date layout for CSV."
+          },
+          {
+            "name": "delimiter",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "CSV separator: comma, semicolon or tab."
+          },
+          {
+            "name": "date_column",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact CSV header for date. Omit for automatic detection."
+          },
+          {
+            "name": "description_column",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact CSV header for description. Omit for automatic detection."
+          },
+          {
+            "name": "amount_column",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact CSV header for amount. Omit for automatic detection."
+          },
+          {
+            "name": "id_column",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact CSV header for id. Omit for automatic detection."
           }
         ],
         "requestBody": {
@@ -699,6 +747,399 @@
           }
         }
       }
+    },
+    "/v1/imports/preview": {
+      "post": {
+        "summary": "Preview a statement without persisting data",
+        "operationId": "previewImport",
+        "parameters": [
+          {
+            "name": "customer_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Operator-owned customer grouping."
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "ofx, qfx or csv"
+          },
+          {
+            "name": "account",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Account alias; required for CSV."
+          },
+          {
+            "name": "decimal",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Decimal separator for CSV: . or ,"
+          },
+          {
+            "name": "date_format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional Go date layout for CSV."
+          },
+          {
+            "name": "delimiter",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "CSV separator: comma, semicolon or tab."
+          },
+          {
+            "name": "date_column",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact CSV header for date. Omit for automatic detection."
+          },
+          {
+            "name": "description_column",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact CSV header for description. Omit for automatic detection."
+          },
+          {
+            "name": "amount_column",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact CSV header for amount. Omit for automatic detection."
+          },
+          {
+            "name": "id_column",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact CSV header for id. Omit for automatic detection."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary",
+                "maxLength": 8388608
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportPreview"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid, ambiguous or oversized statement"
+          },
+          "401": {
+            "description": "Invalid bearer token"
+          },
+          "409": {
+            "description": "Connection has been revoked"
+          }
+        }
+      }
+    },
+    "/v1/imports/columns": {
+      "post": {
+        "operationId": "csvHeaders",
+        "summary": "Read CSV column names without persisting data",
+        "parameters": [
+          {
+            "name": "delimiter",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": ""
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary",
+                "maxLength": 8388608
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "columns"
+                  ],
+                  "properties": {
+                    "columns": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid CSV"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
+      }
+    },
+    "/v1/connections/{id}/pause": {
+      "post": {
+        "operationId": "pauseConnection",
+        "summary": "Pause direct collection and preserve history",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Paused"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "502": {
+            "$ref": "#/components/responses/Error502"
+          }
+        }
+      }
+    },
+    "/v1/connections/{id}/renew": {
+      "post": {
+        "operationId": "renewConnection",
+        "summary": "Verify the same credentials, renew local collection and enqueue sync",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Connection"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "502": {
+            "$ref": "#/components/responses/Error502"
+          }
+        }
+      }
+    },
+    "/v1/transactions": {
+      "get": {
+        "operationId": "searchTransactions",
+        "summary": "Search retained history by description, account and inclusive date range, newest first",
+        "parameters": [
+          {
+            "name": "customer_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": ""
+          },
+          {
+            "name": "account_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": ""
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": ""
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": ""
+          },
+          {
+            "name": "through",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": ""
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": ""
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransactionPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          }
+        }
+      }
+    },
+    "/v1/diagnostics": {
+      "get": {
+        "operationId": "diagnostics",
+        "summary": "Local server version and certificate alerts without credential details",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "version": {
+                      "type": "string"
+                    },
+                    "certificates": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/CertificateStatus"
+                      }
+                    },
+                    "unavailable_profiles": {
+                      "type": [
+                        "array",
+                        "null"
+                      ],
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -706,6 +1147,12 @@
       "bearerAuth": {
         "type": "http",
         "scheme": "bearer"
+      },
+      "localSession": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "ranjit_session",
+        "description": "Embedded localhost dashboard only. Mutations require a matching Origin. Sessions last 8 hours and are lost on restart."
       }
     },
     "parameters": {
@@ -838,7 +1285,8 @@
               "active",
               "denied",
               "expired",
-              "revoked"
+              "revoked",
+              "paused"
             ]
           },
           "created_at": {
@@ -848,7 +1296,7 @@
           "consent_expires_at": {
             "type": "string",
             "format": "date-time",
-            "description": "Local collection deadline. For api_credentials this is not a consent registered at the bank. Omitted for file imports, which do not expire."
+            "description": "Local collection deadline. For api_credentials this is not a consent registered at the bank. Omitted for file imports, which do not expire. Pausing or expiration stops direct collection while keeping personal history readable."
           },
           "last_synced_at": {
             "type": "string",
@@ -1236,6 +1684,18 @@
               "transaction_id",
               "exact_file"
             ]
+          },
+          "new": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "updated": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "unchanged": {
+            "type": "integer",
+            "minimum": 0
           }
         },
         "required": [
@@ -1243,7 +1703,10 @@
           "accounts",
           "transactions",
           "duplicate",
-          "deduplication"
+          "deduplication",
+          "new",
+          "updated",
+          "unchanged"
         ]
       },
       "ConnectionStatus": {
@@ -1275,6 +1738,84 @@
           "accounts",
           "transactions"
         ]
+      },
+      "ImportSample": {
+        "type": "object",
+        "required": [
+          "posted_on",
+          "description",
+          "amount"
+        ],
+        "properties": {
+          "posted_on": {
+            "type": "string",
+            "format": "date"
+          },
+          "description": {
+            "type": "string"
+          },
+          "amount": {
+            "$ref": "#/components/schemas/Money"
+          }
+        }
+      },
+      "ImportPreview": {
+        "type": "object",
+        "required": [
+          "result",
+          "from",
+          "through",
+          "sample"
+        ],
+        "properties": {
+          "result": {
+            "$ref": "#/components/schemas/ImportResult"
+          },
+          "from": {
+            "type": "string"
+          },
+          "through": {
+            "type": "string"
+          },
+          "sample": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "$ref": "#/components/schemas/ImportSample"
+            }
+          }
+        }
+      },
+      "CertificateStatus": {
+        "type": "object",
+        "required": [
+          "profile",
+          "level",
+          "days_remaining"
+        ],
+        "properties": {
+          "profile": {
+            "type": "string"
+          },
+          "level": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "warning",
+              "urgent",
+              "expired",
+              "not_yet_valid",
+              "unreadable"
+            ]
+          },
+          "days_remaining": {
+            "type": "integer"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
       }
     },
     "responses": {

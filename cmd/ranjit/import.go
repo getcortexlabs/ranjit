@@ -19,6 +19,12 @@ func (c cli) importFile(ctx context.Context, args []string) error {
 	format := f.String("format", "", "ofx ou csv; padrão: extensão do arquivo")
 	decimal := f.String("decimal", ".", "separador decimal: . ou , (sem separador de milhares)")
 	dateFormat := f.String("date-format", "", "layout Go opcional; ex.: 01/02/2006 para mês/dia/ano")
+	preview := f.Bool("preview", false, "conferir lançamentos sem gravar")
+	columns := map[string]*string{}
+	for _, field := range []string{"date", "description", "amount", "id"} {
+		columns[field] = f.String(field+"-column", "", "nome da coluna CSV para "+field)
+	}
+	delimiter := f.String("delimiter", "", "separador CSV: , ; ou tab")
 	jsonOutput := f.Bool("json", false, "imprimir resultado em JSON")
 	if err := f.Parse(args); err != nil {
 		return err
@@ -34,7 +40,11 @@ func (c cli) importFile(ctx context.Context, args []string) error {
 		return err
 	}
 	defer file.Close()
-	input, err := statement.Parse(file, statement.Options{Format: *format, Account: *account, Decimal: *decimal, DateFormat: *dateFormat})
+	mapped := map[string]string{}
+	for k, v := range columns {
+		mapped[k] = *v
+	}
+	input, err := statement.Parse(file, statement.Options{Format: *format, Account: *account, Decimal: *decimal, DateFormat: *dateFormat, Columns: mapped, Delimiter: *delimiter})
 	if err != nil {
 		return err
 	}
@@ -47,12 +57,26 @@ func (c cli) importFile(ctx context.Context, args []string) error {
 		return err
 	}
 	defer db.Close()
-	result, err := db.Import(ctx, "personal", *account, input, time.Now())
+	run := db.Import
+	if *preview {
+		run = db.PreviewImport
+	}
+	result, err := run(ctx, "personal", *account, input, time.Now())
 	if err != nil {
 		return err
 	}
 	if *jsonOutput {
 		return json.NewEncoder(c.out).Encode(result)
+	}
+	if *preview {
+		fmt.Fprintf(c.out, "Prévia: %d novos, %d atualizados, %d já existentes. Nenhum dado foi gravado.\n", result.New, result.Updated, result.Unchanged)
+		for i, t := range input.Snapshot.Transactions {
+			if i >= 20 {
+				break
+			}
+			fmt.Fprintf(c.out, "%s  %s  %s\n", t.PostedOn, money(t.Amount), terminal(t.Description))
+		}
+		return nil
 	}
 	if result.Duplicate {
 		fmt.Fprintln(c.out, "Este arquivo já foi importado. Nenhum lançamento foi duplicado.")

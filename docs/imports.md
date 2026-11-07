@@ -61,3 +61,18 @@ curl 'http://localhost:8080/v1/imports?customer_id=personal&format=ofx&account=p
 O SDK oferece `client.Import(ctx, reader, ranjit.ImportOptions{CustomerID: "personal", Format: "ofx", Account: "pessoal"})`. A resposta contém `connection_id`, contagens, `duplicate` e `deduplication`. As contagens descrevem o arquivo, incluindo lançamentos já existentes que foram atualizados; não são contagens de inserções novas.
 
 Os comandos locais listam o agrupamento `personal`. Aplicações podem usar outros `customer_id` pela API, sob a mesma chave de operador. Arquivos importados não expiram. Revogar a conexão remove seus lançamentos e o registro de importação, sem apagar cópias externas do arquivo.
+
+
+## Conferir antes de importar
+
+No painel (`ranjit ui`), escolha o arquivo, ajuste as colunas do CSV e clique em **Conferir extrato**. A prévia mostra os primeiros 20 lançamentos e conta novos, atualizados e já existentes. Só **Confirmar importação** grava os dados. Arquivos já importados ficam identificados.
+
+No terminal:
+
+```sh
+ranjit import --preview --account pessoal --delimiter ';' --decimal , \
+  --date-column Quando --description-column Texto --amount-column Quantia \
+  --id-column Código extrato.csv
+```
+
+Remova `--preview` para gravar com as mesmas opções. Se os nomes já são reconhecidos, o mapeamento é opcional. A prévia também verifica conflitos de conta e períodos sobrepostos, sem deixar registros no banco.

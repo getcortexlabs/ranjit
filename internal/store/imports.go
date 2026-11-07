@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -12,6 +13,12 @@ import (
 )
 
 func (s *Store) Import(ctx context.Context, customer, account string, input statement.Statement, now time.Time) (ranjit.ImportResult, error) {
+	return s.importStatement(ctx, customer, account, input, now, false)
+}
+func (s *Store) PreviewImport(ctx context.Context, customer, account string, input statement.Statement, now time.Time) (ranjit.ImportResult, error) {
+	return s.importStatement(ctx, customer, account, input, now, true)
+}
+func (s *Store) importStatement(ctx context.Context, customer, account string, input statement.Statement, now time.Time, preview bool) (ranjit.ImportResult, error) {
 	result := ranjit.ImportResult{Accounts: len(input.Snapshot.Accounts), Transactions: len(input.Snapshot.Transactions), Deduplication: "transaction_id"}
 	if !input.StableIDs {
 		result.Deduplication = "exact_file"
@@ -56,17 +63,40 @@ func (s *Store) Import(ctx context.Context, customer, account string, input stat
 	}
 	if count > 0 {
 		result.Duplicate = true
-		return result, nil
 	}
 	// Without stable bank IDs, a second overlapping export cannot be reconciled
 	// safely. Equal dates/amounts/descriptions can be separate real transactions.
-	if input.From != "" {
+	if !result.Duplicate && input.From != "" {
 		if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM imports WHERE connection_id=? AND date_from<>'' AND date_from<=? AND date_through>=? AND (stable_ids=0 OR ?=0)`, id, input.Through, input.From, input.StableIDs).Scan(&count); err != nil {
 			return result, err
 		}
 		if count > 0 {
 			return result, fmt.Errorf("%w: overlapping CSV exports need stable transaction IDs; include an id column or export a non-overlapping period", ranjit.ErrInvalid)
 		}
+	}
+	for _, t := range input.Snapshot.Transactions {
+		var description, currency, posted, status string
+		var amount int64
+		accountID := ranjit.StableID("acc", id, t.AccountExternalID)
+		err = tx.QueryRowContext(ctx, `SELECT description,amount_minor,currency,posted_on,status FROM transactions WHERE account_id=? AND external_id=?`, accountID, t.ExternalID).Scan(&description, &amount, &currency, &posted, &status)
+		if errors.Is(err, sql.ErrNoRows) {
+			result.New++
+			continue
+		}
+		if err != nil {
+			return result, err
+		}
+		if description == t.Description && amount == t.Amount.AmountMinor && currency == t.Amount.Currency && posted == t.PostedOn && status == t.Status {
+			result.Unchanged++
+		} else {
+			result.Updated++
+		}
+	}
+	if result.Duplicate && (result.New != 0 || result.Updated != 0) {
+		return result, fmt.Errorf("%w: file already imported with different values; check column mapping or later corrections", ranjit.ErrInvalid)
+	}
+	if preview || result.Duplicate {
+		return result, nil
 	}
 	for i := range input.Snapshot.Accounts {
 		if len(input.Snapshot.Accounts) == 1 {
@@ -96,7 +126,7 @@ func (s *Store) Status(ctx context.Context, id string, now time.Time) (ranjit.Co
 	} else if !errors.Is(err, ranjit.ErrNotFound) {
 		return result, err
 	}
-	if c.Status != "active" {
+	if !c.HistoryAvailable() {
 		return result, nil
 	}
 	err = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM accounts WHERE connection_id=?`, id).Scan(&result.Accounts)
