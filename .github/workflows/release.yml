@@ -44,6 +44,23 @@ jobs:
           docker compose up --build --wait --wait-timeout 120
           make smoke
           docker compose down --volumes
+      - name: Export images for installation without a registry account
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          docker buildx create --use --name ranjit-release
+          for arch in amd64 arm64; do
+            artifact="dist/ranjit_${RELEASE_VERSION}_linux_${arch}.docker.tar"
+            docker buildx build --platform "linux/$arch" --build-arg VERSION="$RELEASE_VERSION" --tag "ghcr.io/getcortexlabs/ranjit:$RELEASE_VERSION" --output "type=docker,dest=$artifact" .
+            gzip -n "$artifact"
+          done
+          (cd dist && sha256sum *.docker.tar.gz >> checksums.txt)
+          sha256sum compose.quick.yaml >> dist/checksums.txt
+          docker load --input "dist/ranjit_${RELEASE_VERSION}_linux_amd64.docker.tar.gz"
+          docker compose -f compose.quick.yaml up -d --wait --wait-timeout 60
+          docker compose -f compose.quick.yaml exec -T ranjit /ranjit demo
+          docker compose -f compose.quick.yaml exec -T ranjit /ranjit doctor
+          docker compose -f compose.quick.yaml down --volumes
       - name: Publish binaries
         env:
           GH_TOKEN: ${{ github.token }}
@@ -57,5 +74,4 @@ jobs:
           RELEASE_VERSION: ${{ github.ref_name }}
         run: |
           printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io --username "$REGISTRY_USER" --password-stdin
-          docker buildx create --use --name ranjit-release
           docker buildx build --platform linux/amd64,linux/arm64 --build-arg VERSION="$RELEASE_VERSION" --tag "ghcr.io/getcortexlabs/ranjit:$RELEASE_VERSION" --tag ghcr.io/getcortexlabs/ranjit:latest --push .

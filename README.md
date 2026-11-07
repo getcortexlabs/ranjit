@@ -72,10 +72,12 @@ A API escuta em `http://localhost:8080`. `ranjit key` mostra a chave para integr
 
 ### Docker
 
-Para usar a imagem publicada:
+O instalador também baixa uma imagem pronta, verifica o checksum e carrega no Docker. Não exige conta em registry:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/getcortexlabs/ranjit/main/compose.quick.yaml -o compose.yaml
+curl -fsSL https://raw.githubusercontent.com/getcortexlabs/ranjit/main/install.sh -o /tmp/ranjit-install.sh
+sh /tmp/ranjit-install.sh --docker
+cd ranjit-docker
 docker compose up -d
 docker compose exec ranjit /ranjit demo
 docker compose exec ranjit /ranjit accounts
