@@ -1,11 +1,12 @@
 # Arquitetura
 
-O processo HTTP e o worker compartilham um SQLite. Esse recorte mantém o projeto fácil de instalar e permite testar as garantias de consistência sem depender de serviços externos. A instalação atual é de um único operador, com um processo por arquivo de banco.
+O processo HTTP e o worker compartilham um SQLite. Esse recorte mantém o projeto fácil de instalar e permite testar as garantias de consistência sem depender de serviços externos. A instalação é de um único operador, com um servidor por arquivo de banco. Os comandos locais também podem abrir esse SQLite por períodos curtos, usando as mesmas transações e concessões de execução.
 
 ```text
 aplicação → API HTTP → serviço / armazenamento → SQLite
+terminal → CLI ──────→ importação / consultas ──────↑
                                ↑                  ↑
-                        consentimento           worker → provedor
+                        consentimento           worker → perfis → provedores
 ```
 
 | Local | Responsabilidade |
@@ -13,6 +14,9 @@ aplicação → API HTTP → serviço / armazenamento → SQLite
 | `model.go` | Tipos públicos, valores monetários e identificação |
 | `client.go` | Cliente HTTP Go; não conhece armazenamento nem provedores |
 | `cmd/ranjit` | Configuração, montagem do processo e encerramento |
+| `internal/app` | Montagem dos conectores e registro de perfis |
+| `internal/config` | Configuração pessoal em JSON e compatibilidade com ambiente |
+| `internal/statement` | Leitura limitada de OFX/CSV e identidade dos registros |
 | `internal/httpapi` | Rotas, autenticação, limites de entrada e respostas |
 | `internal/service` | Criação da conexão e autorização do sandbox |
 | `internal/store` | Migrações, consultas e transações de consistência |
@@ -43,7 +47,9 @@ O hash do Client ID e do ambiente vincula a conexão à aplicação Efí. No Int
 
 Um índice parcial permite no máximo um job `queued` ou `running` por conexão. Pedidos simultâneos de sincronização devolvem esse mesmo job. Criar conexões não é idempotente: uma repetição do POST cria outra conexão.
 
-O worker verifica vencimentos, agenda conexões elegíveis e reivindica um job a cada passo. A reivindicação gera um token de execução e uma concessão de um minuto. A consulta ao provedor tem timeout de 20 segundos. Se o processo morrer, outro início do mesmo processo pode recuperar o job após esse minuto.
+O worker verifica vencimentos, agenda conexões elegíveis e reivindica um job a cada passo. A reivindicação gera um token de execução e uma concessão de um minuto. A consulta ao provedor tem timeout de 20 segundos. Se o processo morrer, uma nova execução pode recuperar o job após esse minuto. Cada processo seleciona apenas conexões das instituições que conhece; adicionar um perfil pelo terminal exige reiniciar o servidor para disponibilizá-lo na API.
+
+Respostas GET bem-sucedidas ficam temporariamente em `sync_responses`, limitadas por job e protegidas pelo token de execução. São dados financeiros, sujeitos à mesma política de backup do SQLite. Tokens OAuth e headers não são persistidos. A chave da requisição é um hash, e o período é fixado na criação do job. Uma tentativa pode continuar de onde parou sem repetir as leituras concluídas. Ao atingir o timeout com progresso, o worker devolve o job à fila sem consumir uma tentativa de falha. Conclusão, falha definitiva, expiração ou revogação removem as respostas temporárias.
 
 Antes de importar, o armazenamento valida o lote e verifica novamente estado do consentimento, prazo e token de execução. Contas, transações, conclusão do job e data da última sincronização são gravados na mesma transação. Uma falha em qualquer escrita desfaz todas elas.
 
@@ -55,7 +61,9 @@ Os IDs internos derivam da conexão, do ID da conta no provedor e do ID da trans
 
 Cada lote inclui as contas às quais seus lançamentos pertencem. A ingestão acumula transações por upsert; ausência em um lote não é uma instrução de exclusão. Exclusões individuais, alterações de ID no provedor e a passagem de uma transação pendente para um ID definitivo precisam de um contrato adicional antes de um adaptador real.
 
-Saldos são informados pelo provedor. Não são recalculados a partir do histórico importado. Valores usam inteiros no intervalo exato de JSON/JavaScript e moeda BRL. Datas de lançamento usam `YYYY-MM-DD`; os instantes do sistema usam UTC.
+Importações locais são atômicas e não expiram. Arquivos já importados são reconhecidos por hash; OFX e CSV com IDs também reconciliam lançamentos por conta. Sem IDs, períodos sobrepostos são recusados. A identidade de uma conta em arquivo não é mesclada com a de uma API bancária.
+
+Saldos são informados pelo provedor. CSV sem saldo aparece como `null` na API. `balance_at` distingue o instante de leitura ou a data do saldo informado no OFX; um saldo antigo não substitui outro mais recente. Não são recalculados a partir do histórico importado. Valores usam inteiros no intervalo exato de JSON/JavaScript e moeda BRL. Datas de lançamento usam `YYYY-MM-DD`; os instantes do sistema usam UTC.
 
 ## SQLite
 

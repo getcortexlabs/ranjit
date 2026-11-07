@@ -21,7 +21,7 @@ Use exatamente a origem configurada ao abrir o consentimento. `localhost` e `127
 
 ## Dados e backup
 
-Use um processo e um disco local por arquivo SQLite. Não coloque o WAL em NFS e não tente escalar o Compose com várias réplicas compartilhando o mesmo banco.
+Use um servidor e um disco local por arquivo SQLite. Comandos locais do Ranjit podem abrir o mesmo arquivo; as transações e concessões coordenam essas operações. Não coloque o WAL em NFS e não tente escalar o Compose com várias réplicas compartilhando o mesmo banco.
 
 O processo cria novos diretórios com permissão `0700` e o arquivo com `0600`. Permissões de diretórios ou arquivos já existentes não são alteradas. O banco não tem criptografia em repouso: use proteção de volume, acesso restrito e backups protegidos conforme a operação.
 
@@ -48,3 +48,9 @@ Importações de arquivos não expiram e não entram no agendador bancário. O o
 Cada job retém até 110 respostas GET e 32 MiB no SQLite. Os corpos contêm dados financeiros e recebem a mesma proteção e política de backup do restante do banco. Tokens OAuth, headers e URLs não são persistidos. Tentativas reutilizam respostas do mesmo job, com período fixo. O resultado só fica disponível após a validação completa. Paginação inconsistente falha sem publicar um extrato parcial. Um novo job começa uma leitura nova.
 
 `requests_completed` inclui saldo e páginas de extrato; não é um percentual. `data_from` e `data_through` são as datas mínima e máxima dos lançamentos armazenados, sem afirmar cobertura de todos os dias entre elas. O saldo de um OFX usa a data informada em `DTASOF`. CSV não fornece saldo: a API retorna `balance: null`.
+
+## Distribuição
+
+As releases contêm seis binários (Linux, macOS e Windows em amd64/arm64), checksums e imagens Docker de Linux em amd64/arm64. `sh install.sh --docker` carrega a imagem da release e prepara um Compose que usa a cópia local, sem login em registry. O workflow testa essa imagem e o primeiro uso antes de publicar os arquivos.
+
+O workflow também envia a imagem ao GHCR. A visibilidade desse pacote é independente da visibilidade do repositório; para oferecer `docker pull` anônimo, o mantenedor precisa marcar o pacote como público nas configurações do GitHub Packages. A instalação pela release não depende dessa opção.
