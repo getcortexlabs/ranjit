@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/getcortexlabs/ranjit"
@@ -35,7 +36,15 @@ func Open(ctx context.Context, path string) (*Store, error) {
 	if err = f.Close(); err != nil {
 		return nil, err
 	}
-	u := url.URL{Scheme: "file", Path: abs}
+	uriPath := filepath.ToSlash(abs)
+	if strings.HasPrefix(uriPath, "//") {
+		return nil, errors.New("SQLite requires a local disk; network paths are not supported")
+	}
+	// file:///C:/... is a path; file://C:/... would make C: an authority.
+	if volume := filepath.VolumeName(abs); len(volume) == 2 && volume[1] == ':' {
+		uriPath = "/" + uriPath
+	}
+	u := url.URL{Scheme: "file", Path: uriPath}
 	q := url.Values{"_pragma": {"foreign_keys(1)", "busy_timeout(5000)", "journal_mode(WAL)", "synchronous(FULL)"}, "_txlock": {"immediate"}}
 	u.RawQuery = q.Encode()
 	db, err := sql.Open("sqlite", u.String())
