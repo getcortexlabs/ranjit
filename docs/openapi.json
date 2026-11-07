@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Ranjit API",
-    "version": "0.4.0",
+    "version": "0.1.0",
     "description": "Self-hosted financial data API with a local sandbox and direct Efí / Inter Empresas adapters. Bank account access requires credentials issued to the operator; coverage depends on the provider.",
     "license": {
       "name": "MIT",
@@ -579,6 +579,126 @@
           }
         }
       }
+    },
+    "/v1/imports": {
+      "post": {
+        "summary": "Import a local OFX or CSV statement atomically",
+        "operationId": "importStatement",
+        "parameters": [
+          {
+            "name": "customer_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Operator-owned customer grouping."
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "ofx, qfx or csv"
+          },
+          {
+            "name": "account",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Account alias; required for CSV."
+          },
+          {
+            "name": "decimal",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Decimal separator for CSV: . or ,"
+          },
+          {
+            "name": "date_format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional Go date layout for CSV."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary",
+                "maxLength": 8388608
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid, ambiguous or oversized statement"
+          },
+          "401": {
+            "description": "Invalid bearer token"
+          },
+          "409": {
+            "description": "Connection has been revoked"
+          }
+        }
+      }
+    },
+    "/v1/connections/{id}/status": {
+      "get": {
+        "summary": "Connection state, latest job and stored data counts",
+        "operationId": "connectionStatus",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid bearer token"
+          },
+          "404": {
+            "description": "Connection not found"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -650,7 +770,7 @@
           },
           "sandbox": {
             "type": "boolean",
-            "description": "True for the local sandbox, Efí homologation or Inter sandbox; false for bank production environments."
+            "description": "True for simulated or bank test environments."
           },
           "connection_mode": {
             "type": "string",
@@ -665,6 +785,16 @@
               "type": "string"
             },
             "description": "Coverage of the configured adapter. Inter exposes available balance and account statement; Efí exposes balance, received Pix and completed refunds."
+          },
+          "validation": {
+            "type": "string",
+            "enum": [
+              "experimental",
+              "simulated"
+            ]
+          },
+          "profile": {
+            "type": "string"
           }
         },
         "required": [
@@ -673,7 +803,8 @@
           "provider",
           "sandbox",
           "connection_mode",
-          "data_coverage"
+          "data_coverage",
+          "validation"
         ]
       },
       "Connection": {
@@ -696,7 +827,8 @@
               "inter",
               "sicoob",
               "c6",
-              "santander"
+              "santander",
+              "file"
             ]
           },
           "status": {
@@ -716,7 +848,7 @@
           "consent_expires_at": {
             "type": "string",
             "format": "date-time",
-            "description": "Local collection deadline. For api_credentials this is not a consent registered at the bank."
+            "description": "Local collection deadline. For api_credentials this is not a consent registered at the bank. Omitted for file imports, which do not expire."
           },
           "last_synced_at": {
             "type": "string",
@@ -726,7 +858,8 @@
             "type": "string",
             "enum": [
               "sandbox_consent",
-              "api_credentials"
+              "api_credentials",
+              "file_import"
             ]
           }
         },
@@ -737,7 +870,6 @@
           "provider",
           "status",
           "created_at",
-          "consent_expires_at",
           "authorization_mode"
         ]
       },
@@ -828,15 +960,28 @@
             "enum": [
               "checking",
               "savings",
-              "payment"
+              "payment",
+              "credit_card"
             ]
           },
           "balance": {
-            "$ref": "#/components/schemas/Money"
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "balance_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Bank read observation time or OFX ledger date; omitted when unknown."
           }
         },
         "required": [
@@ -925,6 +1070,11 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "requests_completed": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Successful bank GET responses saved for this job, including balance and statement pages."
           }
         },
         "required": [
@@ -933,7 +1083,8 @@
           "status",
           "attempts",
           "created_at",
-          "updated_at"
+          "updated_at",
+          "requests_completed"
         ]
       },
       "Error": {
@@ -1062,6 +1213,67 @@
         },
         "required": [
           "data"
+        ]
+      },
+      "ImportResult": {
+        "type": "object",
+        "properties": {
+          "connection_id": {
+            "type": "string"
+          },
+          "accounts": {
+            "type": "integer"
+          },
+          "transactions": {
+            "type": "integer"
+          },
+          "duplicate": {
+            "type": "boolean"
+          },
+          "deduplication": {
+            "type": "string",
+            "enum": [
+              "transaction_id",
+              "exact_file"
+            ]
+          }
+        },
+        "required": [
+          "connection_id",
+          "accounts",
+          "transactions",
+          "duplicate",
+          "deduplication"
+        ]
+      },
+      "ConnectionStatus": {
+        "type": "object",
+        "properties": {
+          "connection": {
+            "$ref": "#/components/schemas/Connection"
+          },
+          "latest_job": {
+            "$ref": "#/components/schemas/Job"
+          },
+          "accounts": {
+            "type": "integer"
+          },
+          "transactions": {
+            "type": "integer"
+          },
+          "data_from": {
+            "type": "string",
+            "format": "date"
+          },
+          "data_through": {
+            "type": "string",
+            "format": "date"
+          }
+        },
+        "required": [
+          "connection",
+          "accounts",
+          "transactions"
         ]
       }
     },

@@ -87,3 +87,13 @@ Leituras de contas de uma conexão inativa retornam 409. Uma conta já apagada r
 | 500 | `internal_error` | Falha interna |
 
 O corpo de entrada é limitado a 16 KiB; JSON com campos desconhecidos ou conteúdo adicional é rejeitado com 400. Respostas de erro geradas pelo roteador HTTP, como método não permitido, podem ser texto simples. `X-Request-ID` permite localizar a chamada nos logs sem incluir dados financeiros.
+
+## Importação e acompanhamento
+
+`POST /v1/imports` recebe um corpo OFX/CSV de até 8 MiB. Parâmetros: `customer_id`, `format`, `account` (obrigatório em CSV), `decimal` e `date_format`. O [guia de importação](imports.md) descreve formatos e deduplicação. Essas conexões usam provedor `file`, modo `file_import`, não têm `consent_expires_at` e não aceitam sincronização bancária. A revogação funciona pelo mesmo endpoint.
+
+`GET /v1/connections/{id}/status` retorna `connection`, `latest_job` quando houver, `accounts`, `transactions` e as datas mínima e máxima dos lançamentos presentes. `requests_completed` em um job conta respostas bancárias salvas, incluindo saldo. Não indica quantas requisições ainda faltam. A última sincronização só avança quando o lote completo é publicado.
+
+`Account.balance` pode ser `null` quando o arquivo não informa saldo; não interprete como zero. `balance_at` indica quando o saldo foi lido ou a data do saldo no OFX. `type` também pode ser `credit_card`.
+
+Com perfis, os IDs retornados por `/v1/institutions` têm o formato `perfil:instituição`; use o valor retornado, sem montá-lo por conta própria. Cada instituição informa `profile` e `validation` (`experimental` para conectores bancários; `simulated` no sandbox). Credenciais continuam fora da API.

@@ -19,7 +19,7 @@ func (s *Source) Institutions() []ranjit.Institution {
 	if s.environment == "homologation" {
 		name += " (homologação)"
 	}
-	return []ranjit.Institution{{ID: "efi", Name: name, Provider: "efi", Sandbox: s.environment == "homologation", ConnectionMode: "api_credentials", DataCoverage: []string{"balance", "pix_received", "pix_received_refunds"}}}
+	return []ranjit.Institution{{ID: "efi", Name: name, Provider: "efi", Sandbox: s.environment == "homologation", Validation: "experimental", ConnectionMode: "api_credentials", DataCoverage: []string{"balance", "pix_received", "pix_received_refunds"}}}
 }
 
 type receipt struct {
@@ -70,7 +70,7 @@ func (s *Source) Fetch(ctx context.Context, c ranjit.Connection) (provider.Snaps
 		return provider.Snapshot{}, err
 	}
 	batch := provider.Snapshot{Accounts: []provider.Account{{ExternalID: "own-account", Name: "Conta Efí", Type: "payment", Balance: balance}}}
-	end := s.now().UTC().Truncate(time.Second)
+	end := provider.SyncTime(ctx, s.now()).UTC().Truncate(time.Second)
 	query := url.Values{"inicio": {end.Add(-s.lookback).Format(time.RFC3339)}, "fim": {end.Format(time.RFC3339)}, "paginacao.itensPorPagina": {"100"}}
 	pages, total, received := -1, -1, 0
 	for page := 0; page < maxPages; page++ {

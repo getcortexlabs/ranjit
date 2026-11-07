@@ -1,0 +1,16 @@
+services:
+  ranjit:
+    image: ghcr.io/getcortexlabs/ranjit:v0.1.0
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ranjit_data:/data
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    stop_grace_period: 20s
+
+volumes:
+  ranjit_data:

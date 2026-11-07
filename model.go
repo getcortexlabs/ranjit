@@ -27,6 +27,8 @@ type Institution struct {
 	Sandbox        bool     `json:"sandbox"`
 	ConnectionMode string   `json:"connection_mode"`
 	DataCoverage   []string `json:"data_coverage"`
+	Validation     string   `json:"validation"`
+	Profile        string   `json:"profile,omitempty"`
 }
 
 type Connection struct {
@@ -36,7 +38,7 @@ type Connection struct {
 	Provider          string     `json:"provider"`
 	Status            string     `json:"status"`
 	CreatedAt         time.Time  `json:"created_at"`
-	ConsentExpiresAt  time.Time  `json:"consent_expires_at"`
+	ConsentExpiresAt  time.Time  `json:"consent_expires_at,omitzero"`
 	LastSyncedAt      *time.Time `json:"last_synced_at,omitempty"`
 	AuthorizationMode string     `json:"authorization_mode"`
 	CredentialID      string     `json:"-"`
@@ -68,12 +70,13 @@ func (m Money) Validate() error {
 }
 
 type Account struct {
-	ID           string    `json:"id"`
-	ConnectionID string    `json:"connection_id"`
-	Name         string    `json:"name"`
-	Type         string    `json:"type"`
-	Balance      Money     `json:"balance"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID           string     `json:"id"`
+	ConnectionID string     `json:"connection_id"`
+	Name         string     `json:"name"`
+	Type         string     `json:"type"`
+	Balance      *Money     `json:"balance"`
+	BalanceAt    *time.Time `json:"balance_at,omitempty"`
+	UpdatedAt    time.Time  `json:"updated_at"`
 }
 
 type Transaction struct {
@@ -86,14 +89,32 @@ type Transaction struct {
 }
 
 type Job struct {
-	ID           string    `json:"id"`
-	ConnectionID string    `json:"connection_id"`
-	Status       string    `json:"status"`
-	Attempts     int       `json:"attempts"`
-	ErrorCode    string    `json:"error_code,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
-	LeaseToken   string    `json:"-"`
+	ID                string    `json:"id"`
+	ConnectionID      string    `json:"connection_id"`
+	Status            string    `json:"status"`
+	Attempts          int       `json:"attempts"`
+	ErrorCode         string    `json:"error_code,omitempty"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
+	LeaseToken        string    `json:"-"`
+	RequestsCompleted int       `json:"requests_completed"`
+}
+
+type ConnectionStatus struct {
+	Connection   Connection `json:"connection"`
+	LatestJob    *Job       `json:"latest_job,omitempty"`
+	Accounts     int        `json:"accounts"`
+	Transactions int        `json:"transactions"`
+	DataFrom     string     `json:"data_from,omitempty"`
+	DataThrough  string     `json:"data_through,omitempty"`
+}
+
+type ImportResult struct {
+	ConnectionID  string `json:"connection_id"`
+	Accounts      int    `json:"accounts"`
+	Transactions  int    `json:"transactions"`
+	Duplicate     bool   `json:"duplicate"`
+	Deduplication string `json:"deduplication"`
 }
 
 type Page[T any] struct {

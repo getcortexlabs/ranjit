@@ -20,7 +20,7 @@ func (s *Source) Institutions() []ranjit.Institution {
 	if s.environment == "sandbox" {
 		name += " (sandbox)"
 	}
-	return []ranjit.Institution{{ID: "inter", Name: name, Provider: "inter", Sandbox: s.environment == "sandbox", ConnectionMode: "api_credentials", DataCoverage: []string{"available_balance", "account_statement"}}}
+	return []ranjit.Institution{{ID: "inter", Name: name, Provider: "inter", Sandbox: s.environment == "sandbox", Validation: "experimental", ConnectionMode: "api_credentials", DataCoverage: []string{"available_balance", "account_statement"}}}
 }
 
 type transaction struct {
@@ -63,7 +63,7 @@ func (s *Source) Fetch(ctx context.Context, c ranjit.Connection) (provider.Snaps
 		return provider.Snapshot{}, err
 	}
 	batch := provider.Snapshot{Accounts: []provider.Account{{ExternalID: "own-account", Name: "Conta Inter Empresas", Type: "checking", Balance: balance}}}
-	end := s.now().In(s.location)
+	end := provider.SyncTime(ctx, s.now()).In(s.location)
 	start := end.AddDate(0, 0, 1-s.lookbackDays).Format(time.DateOnly)
 	finish := end.Format(time.DateOnly)
 	query := url.Values{"dataInicio": {start}, "dataFim": {finish}, "tamanhoPagina": {"100"}}

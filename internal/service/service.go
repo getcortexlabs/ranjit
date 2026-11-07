@@ -44,7 +44,15 @@ func (s *Service) Connect(ctx context.Context, req ranjit.ConnectRequest) (ranji
 		return ranjit.ConnectResponse{}, fmt.Errorf("%w: unknown institution", ranjit.ErrInvalid)
 	}
 	if institution.ConnectionMode == "api_credentials" {
-		source, ok := s.Source.(provider.CredentialSource)
+		selected := s.Source
+		if registry, ok := selected.(*provider.Registry); ok {
+			var err error
+			selected, _, err = registry.Resolve(institution.ID)
+			if err != nil {
+				return ranjit.ConnectResponse{}, err
+			}
+		}
+		source, ok := selected.(provider.CredentialSource)
 		if !ok || source.CredentialID() == "" {
 			return ranjit.ConnectResponse{}, ranjit.ErrProviderCredentials
 		}

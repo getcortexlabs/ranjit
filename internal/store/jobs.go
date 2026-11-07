@@ -4,18 +4,19 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/getcortexlabs/ranjit"
 )
 
 const MaxAttempts = 5
-const jobColumns = `id, connection_id, status, attempts, error_code, created_at, updated_at, lease_token`
+const jobColumns = `id, connection_id, status, attempts, error_code, created_at, updated_at, lease_token, requests_completed`
 
 func scanJob(row scanner) (ranjit.Job, error) {
 	var j ranjit.Job
 	var created, updated int64
-	err := row.Scan(&j.ID, &j.ConnectionID, &j.Status, &j.Attempts, &j.ErrorCode, &created, &updated, &j.LeaseToken)
+	err := row.Scan(&j.ID, &j.ConnectionID, &j.Status, &j.Attempts, &j.ErrorCode, &created, &updated, &j.LeaseToken, &j.RequestsCompleted)
 	if errors.Is(err, sql.ErrNoRows) {
 		return j, ranjit.ErrNotFound
 	}
@@ -45,6 +46,13 @@ func (s *Store) Enqueue(ctx context.Context, id string, now time.Time) (ranjit.J
 	if err = active(ctx, tx, id, now); err != nil {
 		return ranjit.Job{}, err
 	}
+	var source string
+	if err = tx.QueryRowContext(ctx, `SELECT provider FROM connections WHERE id = ?`, id).Scan(&source); err != nil {
+		return ranjit.Job{}, err
+	}
+	if source == "file" {
+		return ranjit.Job{}, ranjit.ErrConflict
+	}
 	j, err := enqueue(ctx, tx, id, now)
 	if err != nil {
 		return j, err
@@ -53,10 +61,27 @@ func (s *Store) Enqueue(ctx context.Context, id string, now time.Time) (ranjit.J
 }
 
 func (s *Store) Schedule(ctx context.Context, now time.Time, interval time.Duration) error {
+	return s.ScheduleSelected(ctx, now, interval, nil)
+}
+
+func (s *Store) ScheduleSelected(ctx context.Context, now time.Time, interval time.Duration, selected map[string]bool) error {
+	filter := ""
+	args := []any{now.UnixMilli(), now.Add(-interval).UnixMilli()}
+	if selected != nil {
+		if len(selected) == 0 {
+			return nil
+		}
+		marks := []string{}
+		for id := range selected {
+			marks = append(marks, "?")
+			args = append(args, id)
+		}
+		filter = " AND c.id IN (" + strings.Join(marks, ",") + ")"
+	}
 	// Recent failed jobs also count toward the interval; exhausted retries must not spin forever.
-	rows, err := s.db.QueryContext(ctx, `SELECT id FROM connections c WHERE status = 'active' AND consent_expires_at > ?
+	rows, err := s.db.QueryContext(ctx, `SELECT id FROM connections c WHERE provider <> 'file' AND status = 'active' AND consent_expires_at > ?
 		AND NOT EXISTS (SELECT 1 FROM jobs j WHERE j.connection_id = c.id AND (j.status IN ('queued','running') OR j.updated_at > ?))
-		ORDER BY id LIMIT 100`, now.UnixMilli(), now.Add(-interval).UnixMilli())
+		`+filter+` ORDER BY id LIMIT 100`, args...)
 	if err != nil {
 		return err
 	}
@@ -83,6 +108,23 @@ func (s *Store) Schedule(ctx context.Context, now time.Time, interval time.Durat
 }
 
 func (s *Store) Claim(ctx context.Context, now time.Time, lease time.Duration) (ranjit.Job, error) {
+	return s.ClaimSelected(ctx, now, lease, nil)
+}
+
+func (s *Store) ClaimSelected(ctx context.Context, now time.Time, lease time.Duration, selected map[string]bool) (ranjit.Job, error) {
+	filter := ""
+	args := []any{now.UnixMilli(), now.Add(lease).UnixMilli(), ranjit.NewID("lease"), now.UnixMilli(), now.UnixMilli(), MaxAttempts, now.UnixMilli()}
+	if selected != nil {
+		if len(selected) == 0 {
+			return ranjit.Job{}, ranjit.ErrNotFound
+		}
+		marks := []string{}
+		for id := range selected {
+			marks = append(marks, "?")
+			args = append(args, id)
+		}
+		filter = " AND c.id IN (" + strings.Join(marks, ",") + ")"
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return ranjit.Job{}, err
@@ -97,8 +139,7 @@ func (s *Store) Claim(ctx context.Context, now time.Time, lease time.Duration) (
 		SELECT j.id FROM jobs j JOIN connections c ON c.id = j.connection_id
 		WHERE ((j.status = 'queued' AND j.available_at <= ?) OR (j.status = 'running' AND j.lease_until <= ?))
 		AND j.attempts < ? AND c.status = 'active' AND c.consent_expires_at > ?
-		ORDER BY j.available_at, j.id LIMIT 1) RETURNING `+jobColumns,
-		now.UnixMilli(), now.Add(lease).UnixMilli(), ranjit.NewID("lease"), now.UnixMilli(), now.UnixMilli(), MaxAttempts, now.UnixMilli()))
+		`+filter+` ORDER BY j.available_at, j.id LIMIT 1) RETURNING `+jobColumns, args...))
 	if err != nil && !errors.Is(err, ranjit.ErrNotFound) {
 		return j, err
 	}
@@ -122,4 +163,32 @@ func (s *Store) FailAfter(ctx context.Context, j ranjit.Job, code string, now ti
 	result, err := s.db.ExecContext(ctx, `UPDATE jobs SET status = ?, error_code = ?, updated_at = ?, available_at = ?, lease_token = '', lease_until = 0
 		WHERE id = ? AND status = 'running' AND lease_token = ? AND lease_until > ?`, status, code, now.UnixMilli(), now.Add(delay).UnixMilli(), j.ID, j.LeaseToken, now.UnixMilli())
 	return changed(result, err, ranjit.ErrLease)
+}
+
+// ConfiguredConnections excludes profiles absent from this process. A separate
+// CLI process may add a profile while the server still has its old configuration.
+func (s *Store) ConfiguredConnections(ctx context.Context, institutions []string) (map[string]bool, error) {
+	result := map[string]bool{}
+	if len(institutions) == 0 {
+		return result, nil
+	}
+	marks := []string{}
+	args := []any{}
+	for _, id := range institutions {
+		marks = append(marks, "?")
+		args = append(args, id)
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT id FROM connections WHERE institution_id IN (`+strings.Join(marks, ",")+`) AND status='active'`, args...)
+	if err != nil {
+		return result, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		if err = rows.Scan(&id); err != nil {
+			return result, err
+		}
+		result[id] = true
+	}
+	return result, rows.Err()
 }

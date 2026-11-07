@@ -45,7 +45,7 @@ func (s *Store) CreateAuthorizedConnection(ctx context.Context, c ranjit.Connect
 
 func (s *Store) Connection(ctx context.Context, id string, now time.Time) (ranjit.Connection, error) {
 	c, err := scanConnection(s.db.QueryRowContext(ctx, `SELECT `+connectionColumns+` FROM connections WHERE id = ?`, id))
-	if err == nil && c.Status == "active" && !c.ConsentExpiresAt.After(now) {
+	if err == nil && c.Provider != "file" && c.Status == "active" && !c.ConsentExpiresAt.After(now) {
 		c.Status = "expired"
 	}
 	return c, err
@@ -63,7 +63,7 @@ func (s *Store) Connections(ctx context.Context, customer, cursor string, limit 
 		if err != nil {
 			return page, err
 		}
-		if c.Status == "active" && !c.ConsentExpiresAt.After(now) {
+		if c.Provider != "file" && c.Status == "active" && !c.ConsentExpiresAt.After(now) {
 			c.Status = "expired"
 		}
 		page.Data = append(page.Data, c)
@@ -140,7 +140,7 @@ func (s *Store) Expire(ctx context.Context, now time.Time) error {
 	}
 	defer tx.Rollback()
 	if _, err = tx.ExecContext(ctx, `UPDATE connections SET status = 'expired', token_hash = NULL
-		WHERE (status = 'active' AND consent_expires_at <= ?) OR (status = 'pending' AND authorization_expires_at <= ?)`, now.UnixMilli(), now.UnixMilli()); err != nil {
+		WHERE (provider <> 'file' AND status = 'active' AND consent_expires_at <= ?) OR (status = 'pending' AND authorization_expires_at <= ?)`, now.UnixMilli(), now.UnixMilli()); err != nil {
 		return err
 	}
 	if _, err = tx.ExecContext(ctx, `DELETE FROM accounts WHERE connection_id IN (SELECT id FROM connections WHERE status = 'expired')`); err != nil {
@@ -154,16 +154,16 @@ func (s *Store) Expire(ctx context.Context, now time.Time) error {
 }
 
 func active(ctx context.Context, tx *sql.Tx, id string, now time.Time) error {
-	var status string
+	var status, source string
 	var expires int64
-	err := tx.QueryRowContext(ctx, `SELECT status, consent_expires_at FROM connections WHERE id = ?`, id).Scan(&status, &expires)
+	err := tx.QueryRowContext(ctx, `SELECT status, consent_expires_at, provider FROM connections WHERE id = ?`, id).Scan(&status, &expires, &source)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ranjit.ErrNotFound
 	}
 	if err != nil {
 		return err
 	}
-	if status != "active" || expires <= now.UnixMilli() {
+	if status != "active" || source != "file" && expires <= now.UnixMilli() {
 		return ranjit.ErrConflict
 	}
 	return nil

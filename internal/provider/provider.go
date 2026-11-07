@@ -31,10 +31,12 @@ func (*RetryError) Error() string { return "provider rate limit reached" }
 func (*RetryError) Unwrap() error { return ranjit.ErrProviderUnavailable }
 
 type Account struct {
-	ExternalID string
-	Name       string
-	Type       string
-	Balance    ranjit.Money
+	ExternalID     string
+	Name           string
+	Type           string
+	Balance        ranjit.Money
+	BalanceUnknown bool
+	BalanceAt      time.Time
 }
 
 type Transaction struct {
@@ -55,10 +57,10 @@ type Snapshot struct {
 func (s Snapshot) Validate() error {
 	accounts := make(map[string]bool, len(s.Accounts))
 	for _, a := range s.Accounts {
-		if !validID(a.ExternalID) || accounts[a.ExternalID] || strings.TrimSpace(a.Name) == "" || len(a.Name) > 256 || a.Type != "checking" && a.Type != "savings" && a.Type != "payment" {
+		if !validID(a.ExternalID) || accounts[a.ExternalID] || strings.TrimSpace(a.Name) == "" || len(a.Name) > 256 || a.Type != "checking" && a.Type != "savings" && a.Type != "payment" && a.Type != "credit_card" {
 			return fmt.Errorf("%w: malformed account", ranjit.ErrInvalid)
 		}
-		if err := a.Balance.Validate(); err != nil {
+		if err := a.Balance.Validate(); !a.BalanceUnknown && err != nil {
 			return err
 		}
 		accounts[a.ExternalID] = true

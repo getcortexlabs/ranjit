@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"errors"
+	"flag"
 	"fmt"
 	"log/slog"
 	"net"
@@ -13,15 +14,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/getcortexlabs/ranjit/internal/app"
 	"github.com/getcortexlabs/ranjit/internal/config"
 	"github.com/getcortexlabs/ranjit/internal/httpapi"
-	"github.com/getcortexlabs/ranjit/internal/provider"
-	"github.com/getcortexlabs/ranjit/internal/provider/c6"
-	"github.com/getcortexlabs/ranjit/internal/provider/efi"
-	"github.com/getcortexlabs/ranjit/internal/provider/inter"
-	"github.com/getcortexlabs/ranjit/internal/provider/sandbox"
-	"github.com/getcortexlabs/ranjit/internal/provider/santander"
-	"github.com/getcortexlabs/ranjit/internal/provider/sicoob"
 	"github.com/getcortexlabs/ranjit/internal/service"
 	"github.com/getcortexlabs/ranjit/internal/store"
 	"github.com/getcortexlabs/ranjit/internal/worker"
@@ -30,7 +25,7 @@ import (
 var version = "dev"
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 	if err := run(logger); err != nil {
 		logger.Error("ranjit stopped", "error", err.Error())
 		os.Exit(1)
@@ -39,19 +34,37 @@ func main() {
 
 func run(logger *slog.Logger) error {
 	if len(os.Args) > 1 {
-		if len(os.Args) != 2 {
-			return errors.New("usage: ranjit [init|version|healthcheck]")
-		}
 		switch os.Args[1] {
 		case "init":
+			if len(os.Args) != 2 {
+				return errors.New("use ranjit init")
+			}
 			return initEnv()
 		case "version":
 			fmt.Println(version)
 			return nil
 		case "healthcheck":
 			return healthcheck()
+		case "serve":
+			if len(os.Args) != 2 {
+				return errors.New("use ranjit serve")
+			}
 		default:
-			return errors.New("usage: ranjit [init|version|healthcheck]")
+			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+			defer stop()
+			err := (cli{in: os.Stdin, out: os.Stdout, logger: logger}).command(ctx, os.Args[1:])
+			if errors.Is(err, flag.ErrHelp) {
+				return nil
+			}
+			return err
+		}
+	} else if os.Getenv("RANJIT_API_KEY") == "" {
+		fmt.Print(help)
+		return nil
+	}
+	if os.Getenv("RANJIT_API_KEY") == "" {
+		if _, _, err := personal(true); err != nil {
+			return err
 		}
 	}
 	cfg, err := config.Load()
@@ -65,47 +78,11 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 	defer db.Close()
-	var source provider.Source = sandbox.Source{}
-	if cfg.Provider == "efi" {
-		bank, err := efi.New(cfg.EFI)
-		if err != nil {
-			return err
-		}
-		defer bank.Close()
-		source = bank
+	source, closeSource, err := app.Source(cfg)
+	if err != nil {
+		return err
 	}
-	if cfg.Provider == "inter" {
-		bank, err := inter.New(cfg.Inter)
-		if err != nil {
-			return err
-		}
-		defer bank.Close()
-		source = bank
-	}
-	if cfg.Provider == "sicoob" {
-		bank, err := sicoob.New(cfg.Sicoob)
-		if err != nil {
-			return err
-		}
-		defer bank.Close()
-		source = bank
-	}
-	if cfg.Provider == "c6" {
-		bank, err := c6.New(cfg.C6)
-		if err != nil {
-			return err
-		}
-		defer bank.Close()
-		source = bank
-	}
-	if cfg.Provider == "santander" {
-		bank, err := santander.New(cfg.Santander)
-		if err != nil {
-			return err
-		}
-		defer bank.Close()
-		source = bank
-	}
+	defer closeSource()
 	svc := service.New(db, source, cfg.BaseURL)
 	server := &http.Server{Addr: cfg.Addr, Handler: httpapi.New(svc, cfg.APIKey, logger), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	listener, err := net.Listen("tcp", cfg.Addr)
@@ -158,6 +135,11 @@ func healthcheck() error {
 	addr := os.Getenv("RANJIT_ADDR")
 	if addr == "" {
 		addr = "127.0.0.1:8080"
+		if path, e := config.PersonalPath(); e == nil {
+			if p, e := config.ReadPersonal(path); e == nil {
+				addr = p.Addr
+			}
+		}
 	}
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {

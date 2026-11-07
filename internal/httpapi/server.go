@@ -16,6 +16,7 @@ import (
 
 	"github.com/getcortexlabs/ranjit"
 	"github.com/getcortexlabs/ranjit/internal/service"
+	"github.com/getcortexlabs/ranjit/internal/statement"
 )
 
 type Server struct {
@@ -51,6 +52,8 @@ func New(s *service.Service, apiKey string, logger *slog.Logger) http.Handler {
 	api.HandleFunc("GET /v1/connections/{id}/accounts", h.accounts)
 	api.HandleFunc("GET /v1/accounts/{id}/transactions", h.transactions)
 	api.HandleFunc("GET /v1/jobs/{id}", h.job)
+	api.HandleFunc("POST /v1/imports", h.importStatement)
+	api.HandleFunc("GET /v1/connections/{id}/status", h.status)
 	mux.Handle("/v1/", h.authenticate(api))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { h.problem(w, ranjit.ErrNotFound) })
 	return h.middleware(mux)
@@ -105,7 +108,11 @@ func (h *Server) middleware(next http.Handler) http.Handler {
 			// No URL, query, headers, body or customer identifiers in request logs.
 			h.logger.Info("request", "request_id", id, "method", r.Method, "status", rw.status, "duration_ms", time.Since(start).Milliseconds())
 		}()
-		r.Body = http.MaxBytesReader(rw, r.Body, 16<<10)
+		limit := int64(16 << 10)
+		if r.Method == http.MethodPost && r.URL.Path == "/v1/imports" {
+			limit = statement.MaxBytes
+		}
+		r.Body = http.MaxBytesReader(rw, r.Body, limit)
 		next.ServeHTTP(rw, r)
 	})
 }

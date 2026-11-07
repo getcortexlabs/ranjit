@@ -13,7 +13,7 @@ O servidor pode usar o sandbox local ou os conectores diretos Efí, Inter, Sicoo
 | `RANJIT_PROVIDER` | `sandbox` | `sandbox`, `efi`, `inter`, `sicoob`, `c6` ou `santander` |
 | `RANJIT_SYNC_INTERVAL` | `1h` | Intervalo do agendador; mínimo `1m` |
 
-O binário lê variáveis de ambiente. Quem carrega `.env` é o Makefile ou o Compose. Ao executar `bin/ranjit` diretamente, exporte as variáveis antes. `ranjit init` cria o arquivo sem sobrescrever outro existente; `ranjit version` imprime a versão; `ranjit healthcheck` verifica `/readyz` no endereço local.
+O binário usa `config.json` quando `RANJIT_CONFIG` está definido ou quando não há `RANJIT_API_KEY` no ambiente e existe configuração pessoal. O arquivo explicitamente selecionado tem precedência: não há mistura de credenciais entre arquivo e ambiente. Caminhos relativos no JSON são resolvidos a partir da pasta dele. No fluxo legado, o binário lê variáveis de ambiente. Quem carrega `.env` é o Makefile ou o Compose. Ao executar `bin/ranjit` diretamente, exporte as variáveis antes. `ranjit init` cria o arquivo sem sobrescrever outro existente; `ranjit version` imprime a versão; `ranjit healthcheck` verifica `/readyz` no endereço local.
 
 Para expor a instalação, configure uma origem HTTPS sem caminho, query ou credenciais em `RANJIT_BASE_URL` e termine TLS em um proxy. O servidor não implementa TLS. Apenas origens de loopback podem usar HTTP. Configure limite de requisições e acesso na infraestrutura: não há rate limiter ou contas de operadores no binário.
 
@@ -41,4 +41,10 @@ Para trocar a chave da API, atualize a variável e reinicie o processo. Atualize
 
 `make check` valida código e comportamento sem exigir portas de rede. `make smoke` precisa de uma instância com o provedor `sandbox` rodando e testa o caminho HTTP por socket. O workflow de CI executa ambos e faz uma verificação de vulnerabilidades. A imagem Docker é construída e exercitada em um job separado.
 
-Os testes dos conectores Efí e Inter usam respostas bancárias simuladas. A validação contra uma conta habilitada é uma etapa separada. Ao mudar de provedor ou ambiente, use outro arquivo de banco para manter os dados separados.
+Os cinco conectores usam respostas bancárias simuladas nos testes. A validação contra uma conta habilitada é uma etapa separada, descrita em [homologação](validation.md). Perfis distintos podem usar o mesmo SQLite: cada instituição contém o nome do perfil e cada conexão permanece vinculada ao hash da aplicação, ambiente e conta. Trocar credenciais que alterem essa identidade exige uma nova conexão. Não renomeie um perfil com conexões ativas sem planejar a reconexão.
+
+Importações de arquivos não expiram e não entram no agendador bancário. O operador pode removê-las com `ranjit revoke ID`. Conexões bancárias diretas mantêm o prazo local de 90 dias; esse prazo é uma decisão do Ranjit, não um consentimento de Open Finance emitido pelo banco.
+
+Cada job retém até 110 respostas GET e 32 MiB no SQLite. Os corpos contêm dados financeiros e recebem a mesma proteção e política de backup do restante do banco. Tokens OAuth, headers e URLs não são persistidos. Tentativas reutilizam respostas do mesmo job, com período fixo. O resultado só fica disponível após a validação completa. Paginação inconsistente falha sem publicar um extrato parcial. Um novo job começa uma leitura nova.
+
+`requests_completed` inclui saldo e páginas de extrato; não é um percentual. `data_from` e `data_through` são as datas mínima e máxima dos lançamentos armazenados, sem afirmar cobertura de todos os dias entre elas. O saldo de um OFX usa a data informada em `DTASOF`. CSV não fornece saldo: a API retorna `balance: null`.

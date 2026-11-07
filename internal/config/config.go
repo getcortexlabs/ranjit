@@ -17,6 +17,7 @@ import (
 )
 
 type Config struct {
+	Profiles     []Profile
 	Addr         string
 	BaseURL      string
 	APIKey       string
@@ -31,6 +32,19 @@ type Config struct {
 }
 
 func Load() (Config, error) {
+	if os.Getenv("RANJIT_CONFIG") != "" || os.Getenv("RANJIT_API_KEY") == "" {
+		path, err := PersonalPath()
+		if err != nil {
+			return Config{}, err
+		}
+		personal, err := ReadPersonal(path)
+		if err == nil {
+			return personal.Runtime(path), nil
+		}
+		if os.Getenv("RANJIT_CONFIG") != "" || !os.IsNotExist(err) {
+			return Config{}, err
+		}
+	}
 	c := Config{Addr: env("RANJIT_ADDR", "127.0.0.1:8080"), BaseURL: strings.TrimRight(env("RANJIT_BASE_URL", "http://localhost:8080"), "/"), APIKey: os.Getenv("RANJIT_API_KEY"), Database: env("RANJIT_DATABASE", "./data/ranjit.db")}
 	if len(c.APIKey) < 32 || strings.ContainsAny(c.APIKey, " \t\r\n") {
 		return c, fmt.Errorf("RANJIT_API_KEY must contain at least 32 bytes without whitespace; run 'ranjit init' to generate one")
@@ -110,24 +124,35 @@ func Load() (Config, error) {
 			return c, fmt.Errorf("C6 requires RANJIT_C6_CLIENT_ID, RANJIT_C6_CLIENT_SECRET_FILE, RANJIT_C6_CERT_FILE and RANJIT_C6_KEY_FILE")
 		}
 	}
-	if _, _, err := net.SplitHostPort(c.Addr); err != nil {
-		return c, fmt.Errorf("RANJIT_ADDR must use host:port")
+	if err := validateServer(c.Addr, c.BaseURL, c.APIKey); err != nil {
+		return c, err
 	}
-	u, err := url.Parse(c.BaseURL)
-	if err != nil || u.Hostname() == "" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" || u.Scheme != "https" && u.Scheme != "http" {
-		return c, fmt.Errorf("RANJIT_BASE_URL must be an absolute http(s) origin without a path, credentials, query or fragment")
-	}
-	if u.Scheme == "http" {
-		ip := net.ParseIP(u.Hostname())
-		if u.Hostname() != "localhost" && (ip == nil || !ip.IsLoopback()) {
-			return c, fmt.Errorf("RANJIT_BASE_URL requires HTTPS outside loopback")
-		}
-	}
+	var err error
 	c.SyncInterval, err = time.ParseDuration(env("RANJIT_SYNC_INTERVAL", "1h"))
 	if err != nil || c.SyncInterval < time.Minute {
 		return c, fmt.Errorf("RANJIT_SYNC_INTERVAL must be a duration of at least 1m")
 	}
 	return c, nil
+}
+
+func validateServer(addr, baseURL, apiKey string) error {
+	if len(apiKey) < 32 || strings.ContainsAny(apiKey, " \t\r\n") {
+		return fmt.Errorf("API key must contain at least 32 bytes without whitespace")
+	}
+	if _, _, err := net.SplitHostPort(addr); err != nil {
+		return fmt.Errorf("RANJIT_ADDR must use host:port")
+	}
+	u, err := url.Parse(baseURL)
+	if err != nil || u.Hostname() == "" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" || u.Scheme != "https" && u.Scheme != "http" {
+		return fmt.Errorf("RANJIT_BASE_URL must be an absolute http(s) origin without a path, credentials, query or fragment")
+	}
+	if u.Scheme == "http" {
+		ip := net.ParseIP(u.Hostname())
+		if u.Hostname() != "localhost" && (ip == nil || !ip.IsLoopback()) {
+			return fmt.Errorf("RANJIT_BASE_URL requires HTTPS outside loopback")
+		}
+	}
+	return nil
 }
 
 func env(name, fallback string) string {

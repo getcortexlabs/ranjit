@@ -130,9 +130,12 @@ func TestBindingAndBankCalendar(t *testing.T) {
 func TestMissingBalanceOrCurrencyNeverBecomesZero(t *testing.T) {
 	for _, body := range []string{`{}`, `{"available":0}`, `{"available":1,"currency_code":"USD"}`, `{"available":null,"currency_code":"BRL"}`} {
 		s := sourceFixture(t)
-		s.token = "cached"
-		s.expiresAt = now.Add(time.Hour)
-		s.client.Transport = roundTripFunc(func(*http.Request) (*http.Response, error) { return response(200, body), nil })
+		s.client.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			if r.Method == http.MethodPost {
+				return response(200, `{"access_token":"cached","token_type":"Bearer","expires_in":3600}`), nil
+			}
+			return response(200, body), nil
+		})
 		if _, err := s.Fetch(t.Context(), connection(s)); err == nil {
 			t.Fatal("invalid balance accepted")
 		}

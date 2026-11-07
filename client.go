@@ -95,6 +95,40 @@ func (c *Client) Revoke(ctx context.Context, connectionID string) error {
 	return c.do(ctx, http.MethodDelete, "/v1/connections/"+url.PathEscape(connectionID), nil, nil)
 }
 
+func (c *Client) Status(ctx context.Context, connectionID string) (ConnectionStatus, error) {
+	var out ConnectionStatus
+	err := c.do(ctx, http.MethodGet, "/v1/connections/"+url.PathEscape(connectionID)+"/status", nil, &out)
+	return out, err
+}
+
+type ImportOptions struct {
+	CustomerID string
+	Account    string
+	Format     string
+	Decimal    string
+	DateFormat string
+}
+
+// Import uploads a local OFX/CSV export. Requests are limited to 8 MiB.
+func (c *Client) Import(ctx context.Context, input io.Reader, opts ImportOptions) (ImportResult, error) {
+	var out ImportResult
+	data, err := io.ReadAll(io.LimitReader(input, (8<<20)+1))
+	if err != nil {
+		return out, err
+	}
+	if len(data) > 8<<20 {
+		return out, fmt.Errorf("statement exceeds 8 MiB")
+	}
+	q := url.Values{"customer_id": {opts.CustomerID}, "account": {opts.Account}, "format": {opts.Format}, "decimal": {opts.Decimal}, "date_format": {opts.DateFormat}}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/v1/imports?"+q.Encode(), bytes.NewReader(data))
+	if err != nil {
+		return out, err
+	}
+	req.Header.Set("Content-Type", "application/octet-stream")
+	err = c.send(req, &out)
+	return out, err
+}
+
 func pageQuery(cursor string, limit int) url.Values {
 	v := url.Values{}
 	if cursor != "" {
@@ -119,11 +153,15 @@ func (c *Client) do(ctx context.Context, method, path string, input, output any)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	req.Header.Set("Accept", "application/json")
 	if input != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	return c.send(req, output)
+}
+
+func (c *Client) send(req *http.Request, output any) error {
+	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	req.Header.Set("Accept", "application/json")
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
 		return err

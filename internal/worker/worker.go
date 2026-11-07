@@ -12,11 +12,12 @@ import (
 )
 
 type Worker struct {
-	Store    *store.Store
-	Source   provider.Source
-	Interval time.Duration
-	Logger   *slog.Logger
-	Now      func() time.Time
+	ConnectionIDs map[string]bool
+	Store         *store.Store
+	Source        provider.Source
+	Interval      time.Duration
+	Logger        *slog.Logger
+	Now           func() time.Time
 }
 
 func New(db *store.Store, source provider.Source, interval time.Duration, logger *slog.Logger) *Worker {
@@ -44,10 +45,22 @@ func (w *Worker) Step(ctx context.Context) error {
 	if err := w.Store.Expire(ctx, now); err != nil {
 		return err
 	}
-	if err := w.Store.Schedule(ctx, now, w.Interval); err != nil {
-		return err
+	selected := w.ConnectionIDs
+	if selected == nil {
+		institutions := []string{}
+		for _, i := range w.Source.Institutions() {
+			institutions = append(institutions, i.ID)
+		}
+		var err error
+		selected, err = w.Store.ConfiguredConnections(ctx, institutions)
+		if err != nil {
+			return err
+		}
+		if err = w.Store.ScheduleSelected(ctx, now, w.Interval, selected); err != nil {
+			return err
+		}
 	}
-	j, err := w.Store.Claim(ctx, now, time.Minute)
+	j, err := w.Store.ClaimSelected(ctx, now, time.Minute, selected)
 	if errors.Is(err, ranjit.ErrNotFound) {
 		return nil
 	}
@@ -62,11 +75,18 @@ func (w *Worker) Step(ctx context.Context) error {
 		return w.Store.Expire(ctx, w.Now())
 	}
 	fetchCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	fetchCtx = provider.WithCheckpoint(fetchCtx, store.Checkpoint{Store: w.Store, Job: j, Now: w.Now}, j.CreatedAt)
 	batch, fetchErr := w.Source.Fetch(fetchCtx, c)
 	if fetchErr == nil {
 		fetchErr = fetchCtx.Err()
 	}
 	cancel()
+	if errors.Is(fetchErr, context.DeadlineExceeded) && ctx.Err() == nil {
+		current, err := w.Store.Job(ctx, j.ID)
+		if err == nil && current.RequestsCompleted > j.RequestsCompleted {
+			return w.Store.Yield(ctx, j, w.Now())
+		}
+	}
 	code := "provider_unavailable"
 	if fetchErr == nil {
 		fetchErr = w.Store.Complete(ctx, j, batch, w.Now())

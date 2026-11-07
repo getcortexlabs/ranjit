@@ -4,6 +4,8 @@
 .env.*
 data
 bin
+dist
+config.json
 coverage.out
 *.db
 *.db-shm

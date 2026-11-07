@@ -149,8 +149,6 @@ func TestPacingRespectsCancellation(t *testing.T) {
 		t.Error("contacted bank after cancellation")
 		return response(500, ``), nil
 	})
-	s.token = "cached"
-	s.expiresAt = now.Add(time.Hour)
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	if err := s.Verify(ctx); !errors.Is(err, context.Canceled) {
