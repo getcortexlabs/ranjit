@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Ranjit API",
-    "version": "0.2.0",
-    "description": "Single-operator financial API. Supports a local sandbox and the operator's own Efí account (balance, received Pix and completed refunds only). Efí access uses bank-issued application credentials; it is not Open Finance data sharing. Bearer credentials belong to the backend. Customer IDs do not provide tenant isolation.",
+    "version": "0.3.0",
+    "description": "Self-hosted financial data API with a local sandbox and direct Efí / Inter Empresas adapters. Bank account access requires credentials issued to the operator; coverage depends on the provider.",
     "license": {
       "name": "MIT",
       "identifier": "MIT"
@@ -641,12 +641,13 @@
             "type": "string",
             "enum": [
               "sandbox",
-              "efi"
+              "efi",
+              "inter"
             ]
           },
           "sandbox": {
             "type": "boolean",
-            "description": "True for local simulated data or Efí homologation; false for Efí production."
+            "description": "True for the local sandbox, Efí homologation or Inter sandbox; false for bank production environments."
           },
           "connection_mode": {
             "type": "string",
@@ -660,7 +661,7 @@
             "items": {
               "type": "string"
             },
-            "description": "Explicit coverage of the adapter. Efí does not return a complete bank statement."
+            "description": "Coverage of the configured adapter. Inter exposes available balance and account statement; Efí exposes balance, received Pix and completed refunds."
           }
         },
         "required": [
@@ -688,7 +689,8 @@
             "type": "string",
             "enum": [
               "sandbox",
-              "efi"
+              "efi",
+              "inter"
             ]
           },
           "status": {
@@ -747,7 +749,8 @@
             "enum": [
               "sandbox-bank",
               "sandbox-credit-union",
-              "efi"
+              "efi",
+              "inter"
             ]
           }
         },

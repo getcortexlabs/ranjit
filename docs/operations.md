@@ -1,6 +1,6 @@
 # Operação
 
-O servidor pode usar o sandbox local ou o conector direto Efí. Configure as credenciais da própria conta seguindo o [guia Efí](efi.md); o deploy sozinho não habilita acesso bancário.
+O servidor pode usar o sandbox local ou os conectores diretos Efí e Inter. Configure as credenciais da própria conta seguindo o [guia Efí](efi.md) ou o [guia Inter](inter.md); o deploy sozinho não habilita acesso bancário.
 
 ## Configuração
 
@@ -10,7 +10,7 @@ O servidor pode usar o sandbox local ou o conector direto Efí. Configure as cre
 | `RANJIT_ADDR` | `127.0.0.1:8080` | Endereço de escuta HTTP |
 | `RANJIT_BASE_URL` | `http://localhost:8080` | Origem pública dos links de consentimento |
 | `RANJIT_DATABASE` | `./data/ranjit.db` | Caminho do arquivo SQLite |
-| `RANJIT_PROVIDER` | `sandbox` | `sandbox` ou `efi` |
+| `RANJIT_PROVIDER` | `sandbox` | `sandbox`, `efi` ou `inter` |
 | `RANJIT_SYNC_INTERVAL` | `1h` | Intervalo do agendador; mínimo `1m` |
 
 O binário lê variáveis de ambiente. Quem carrega `.env` é o Makefile ou o Compose. Ao executar `bin/ranjit` diretamente, exporte as variáveis antes. `ranjit init` cria o arquivo sem sobrescrever outro existente; `ranjit version` imprime a versão; `ranjit healthcheck` verifica `/readyz` no endereço local.
@@ -41,4 +41,4 @@ Para trocar a chave da API, atualize a variável e reinicie o processo. Atualize
 
 `make check` valida código e comportamento sem exigir portas de rede. `make smoke` precisa de uma instância com o provedor `sandbox` rodando e testa o caminho HTTP por socket. O workflow de CI executa ambos e faz uma verificação de vulnerabilidades. A imagem Docker é construída e exercitada em um job separado.
 
-Os testes do conector Efí usam respostas bancárias simuladas. A validação contra uma conta habilitada é uma etapa separada. Ao mudar de provedor ou ambiente, use outro arquivo de banco para manter os dados separados.
+Os testes dos conectores Efí e Inter usam respostas bancárias simuladas. A validação contra uma conta habilitada é uma etapa separada. Ao mudar de provedor ou ambiente, use outro arquivo de banco para manter os dados separados.

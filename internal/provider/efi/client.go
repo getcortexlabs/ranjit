@@ -5,21 +5,18 @@ package efi
 import (
 	"context"
 	"crypto/sha256"
-	"crypto/tls"
-	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/getcortexlabs/ranjit"
+	"github.com/getcortexlabs/ranjit/internal/provider"
 )
 
 const maxResponseBytes = 2 << 20
@@ -60,41 +57,17 @@ func New(cfg Config) (*Source, error) {
 	if cfg.LookbackDays < 1 || cfg.LookbackDays > 90 {
 		return nil, errors.New("Efí lookback must be between 1 and 90 days")
 	}
-	file, err := os.Open(cfg.ClientSecretFile)
+	value, err := provider.ReadSecretFile(cfg.ClientSecretFile)
 	if err != nil {
-		return nil, errors.New("cannot open Efí client secret file")
+		return nil, err
 	}
-	secret, err := io.ReadAll(io.LimitReader(file, 4097))
-	file.Close()
-	if err != nil || len(secret) > 4096 {
-		return nil, errors.New("cannot read Efí client secret file")
-	}
-	value := strings.TrimSpace(string(secret))
-	if value == "" || strings.ContainsAny(value, "\r\n") {
-		return nil, errors.New("Efí client secret file is empty or invalid")
-	}
-	cert, err := tls.LoadX509KeyPair(cfg.CertificateFile, cfg.PrivateKeyFile)
+	client, err := provider.NewMTLSClient(cfg.CertificateFile, cfg.PrivateKeyFile)
 	if err != nil {
-		return nil, errors.New("cannot load Efí PEM certificate and private key")
-	}
-	if cert.Leaf == nil {
-		cert.Leaf, err = x509.ParseCertificate(cert.Certificate[0])
-		if err != nil {
-			return nil, errors.New("cannot parse Efí certificate")
-		}
-	}
-	if time.Now().Before(cert.Leaf.NotBefore) || !time.Now().Before(cert.Leaf.NotAfter) {
-		return nil, errors.New("Efí certificate is not currently valid")
-	}
-	transport := &http.Transport{
-		DialContext:         (&net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
-		TLSClientConfig:     &tls.Config{MinVersion: tls.VersionTLS12, Certificates: []tls.Certificate{cert}},
-		TLSHandshakeTimeout: 5 * time.Second, ResponseHeaderTimeout: 10 * time.Second,
-		MaxIdleConns: 4, MaxIdleConnsPerHost: 2, IdleConnTimeout: 60 * time.Second,
+		return nil, err
 	}
 	hash := sha256.Sum256([]byte(cfg.Environment + "\x00" + cfg.ClientID))
 	return &Source{
-		client:  &http.Client{Transport: transport, Timeout: 15 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }},
+		client:  client,
 		baseURL: base, clientID: cfg.ClientID, clientSecret: value, credentialID: hex.EncodeToString(hash[:]),
 		environment: cfg.Environment, lookback: time.Duration(cfg.LookbackDays) * 24 * time.Hour, now: time.Now,
 	}, nil

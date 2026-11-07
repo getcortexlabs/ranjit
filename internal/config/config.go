@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/getcortexlabs/ranjit/internal/provider/efi"
+	"github.com/getcortexlabs/ranjit/internal/provider/inter"
 )
 
 type Config struct {
@@ -20,6 +21,7 @@ type Config struct {
 	SyncInterval time.Duration
 	Provider     string
 	EFI          efi.Config
+	Inter        inter.Config
 }
 
 func Load() (Config, error) {
@@ -28,8 +30,8 @@ func Load() (Config, error) {
 		return c, fmt.Errorf("RANJIT_API_KEY must contain at least 32 bytes without whitespace; run 'ranjit init' to generate one")
 	}
 	c.Provider = env("RANJIT_PROVIDER", "sandbox")
-	if c.Provider != "sandbox" && c.Provider != "efi" {
-		return c, fmt.Errorf("RANJIT_PROVIDER must be sandbox or efi")
+	if c.Provider != "sandbox" && c.Provider != "efi" && c.Provider != "inter" {
+		return c, fmt.Errorf("RANJIT_PROVIDER must be sandbox, efi or inter")
 	}
 	if c.Provider == "efi" {
 		days, err := strconv.Atoi(env("RANJIT_EFI_LOOKBACK_DAYS", "90"))
@@ -42,6 +44,19 @@ func Load() (Config, error) {
 		}
 		if c.EFI.ClientID == "" || c.EFI.ClientSecretFile == "" || c.EFI.CertificateFile == "" || c.EFI.PrivateKeyFile == "" {
 			return c, fmt.Errorf("Efí requires RANJIT_EFI_CLIENT_ID, RANJIT_EFI_CLIENT_SECRET_FILE, RANJIT_EFI_CERT_FILE and RANJIT_EFI_KEY_FILE")
+		}
+	}
+	if c.Provider == "inter" {
+		days, err := strconv.Atoi(env("RANJIT_INTER_LOOKBACK_DAYS", "7"))
+		if err != nil || days < 1 || days > 90 {
+			return c, fmt.Errorf("RANJIT_INTER_LOOKBACK_DAYS must be between 1 and 90")
+		}
+		c.Inter = inter.Config{Environment: env("RANJIT_INTER_ENV", "sandbox"), ClientID: os.Getenv("RANJIT_INTER_CLIENT_ID"), ClientSecretFile: os.Getenv("RANJIT_INTER_CLIENT_SECRET_FILE"), CertificateFile: os.Getenv("RANJIT_INTER_CERT_FILE"), PrivateKeyFile: os.Getenv("RANJIT_INTER_KEY_FILE"), Account: os.Getenv("RANJIT_INTER_ACCOUNT"), LookbackDays: days}
+		if c.Inter.Environment != "sandbox" && c.Inter.Environment != "production" {
+			return c, fmt.Errorf("RANJIT_INTER_ENV must be sandbox or production")
+		}
+		if c.Inter.ClientID == "" || c.Inter.ClientSecretFile == "" || c.Inter.CertificateFile == "" || c.Inter.PrivateKeyFile == "" || c.Inter.Account == "" {
+			return c, fmt.Errorf("Inter requires RANJIT_INTER_CLIENT_ID, RANJIT_INTER_CLIENT_SECRET_FILE, RANJIT_INTER_CERT_FILE, RANJIT_INTER_KEY_FILE and RANJIT_INTER_ACCOUNT")
 		}
 	}
 	if _, _, err := net.SplitHostPort(c.Addr); err != nil {

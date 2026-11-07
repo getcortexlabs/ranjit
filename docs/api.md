@@ -8,11 +8,11 @@ Use `Authorization: Bearer <chave>` em todas as rotas `/v1`. A instalação repr
 
 `GET /healthz` e `GET /readyz` não exigem autenticação. O primeiro verifica que o processo responde; o segundo também consulta o banco.
 
-## Conexão direta Efí
+## Conexões diretas
 
-Com `RANJIT_PROVIDER=efi`, envie `institution_id: efi`. A criação verifica a aplicação configurada localmente, cria a conexão ativa e enfileira a primeira sincronização. A resposta traz apenas `connection`; não há URL de consentimento. `authorization_mode: api_credentials` identifica esse fluxo. O campo `consent_expires_at` representa o limite local de coleta de 90 dias, independente da validade bancária.
+Com `RANJIT_PROVIDER=efi`, envie `institution_id: efi`. Com `RANJIT_PROVIDER=inter`, envie `institution_id: inter`. A criação verifica a aplicação configurada localmente, cria a conexão ativa e enfileira a primeira sincronização. A resposta traz apenas `connection`; não há URL de consentimento. `authorization_mode: api_credentials` identifica esse fluxo. O campo `consent_expires_at` representa o limite local de coleta de 90 dias, independente da validade bancária.
 
-`GET /v1/institutions` informa `connection_mode`, `sandbox` e `data_coverage`. Para Efí, o histórico cobre recebimentos Pix e suas devoluções concluídas; não representa o extrato completo. Consulte o [guia do conector](efi.md).
+`GET /v1/institutions` informa `connection_mode`, `sandbox` e `data_coverage`. Para Efí, o histórico cobre recebimentos Pix e suas devoluções concluídas; não representa o extrato completo. Consulte o [guia Efí](efi.md). O Inter cobre saldo disponível e extrato da conta PJ; veja o [guia Inter](inter.md).
 
 ## Consentimento simulado
 
@@ -59,7 +59,7 @@ Isso representa um débito de R$ 45,90. Não use `float` para armazenar esse val
 
 ## Revogação
 
-`DELETE /v1/connections/{id}` retorna 204 depois de revogar localmente, invalidar o link, cancelar jobs ativos e apagar contas e transações. Repetir para uma conexão já revogada também retorna 204. O registro da conexão e os jobs permanecem para consulta. Para Efí, revogar a credencial no banco exige desabilitar a aplicação na Efí; o DELETE encerra somente o acesso local.
+`DELETE /v1/connections/{id}` retorna 204 depois de revogar localmente, invalidar o link, cancelar jobs ativos e apagar contas e transações. Repetir para uma conexão já revogada também retorna 204. O registro da conexão e os jobs permanecem para consulta. Para os conectores diretos, revogar a credencial bancária exige desabilitar a aplicação no respectivo banco; o DELETE encerra somente o acesso local.
 
 Leituras de contas de uma conexão inativa retornam 409. Uma conta já apagada retorna 404 ao consultar suas transações. Expiração também bloqueia acesso imediatamente; a limpeza física de linhas ocorre no próximo passo do worker.
 

@@ -2,9 +2,9 @@
 
 Uma API em Go para conectar contas, acompanhar consentimentos e consultar dados financeiros no mesmo formato.
 
-O Ranjit cuida da integração dentro da aplicação: estado da conexão, fila de sincronização, contas, saldos e transações. Inclui um sandbox local e um conector direto para a própria conta Efí, com saldo, Pix recebidos e devoluções concluídas desses recebimentos.
+O Ranjit cuida da integração dentro da aplicação: estado da conexão, fila de sincronização, contas, saldos e transações. Inclui um sandbox local e conectores diretos para a própria conta Efí e Inter Empresas. A cobertura de dados depende do banco.
 
-A integração Efí usa as credenciais da aplicação criada pelo titular no banco. Para compartilhamento entre bancos pelo Open Finance, ainda é necessária uma operação habilitada e outro adaptador. Os [limites de acesso](docs/open-finance.md) estão documentados com as referências oficiais.
+As integrações diretas usam as credenciais da aplicação criada pelo titular no banco. Para compartilhamento entre bancos pelo Open Finance, ainda é necessária uma operação habilitada e outro adaptador. Os [limites de acesso](docs/open-finance.md) estão documentados com as referências oficiais.
 
 ## Rodar
 
@@ -45,6 +45,18 @@ O [guia Efí](docs/efi.md) mostra como configurar Client ID, Client Secret e cer
 
 O histórico inicial cobre Pix recebidos e suas devoluções concluídas. Compras, Pix enviados e o extrato completo não estão incluídos. O conector foi testado com respostas simuladas da API; a validação com uma conta habilitada ainda está pendente.
 
+## Conectar a própria conta Inter Empresas
+
+O [guia Inter](docs/inter.md) explica como configurar a API Banking para consultar saldo disponível e lançamentos do extrato. A integração atende contas PJ; o banco não disponibiliza essas APIs para PF ou MEI. A instalação seleciona explicitamente a conta e solicita apenas `extrato.read`.
+
+Os testes locais usam respostas simuladas. A validação com uma conta Inter habilitada ainda está pendente.
+
+| Provedor | Acesso | Cobertura |
+| --- | --- | --- |
+| `sandbox` | Local, sem credenciais bancárias | Contas e transações fictícias |
+| `efi` | Aplicação Efí habilitada | Saldo, Pix recebidos e suas devoluções |
+| `inter` | Aplicação Inter Empresas PJ habilitada | Saldo disponível e extrato da conta |
+
 ## Integrar
 
 Toda chamada em `/v1` usa `Authorization: Bearer <RANJIT_API_KEY>`. Essa chave pertence ao backend da aplicação. Ela permite acessar todos os clientes daquela instalação; `customer_id` é um identificador de agrupamento, não uma barreira de autorização entre usuários.
@@ -60,7 +72,7 @@ curl http://localhost:8080/v1/connections \
   -d '{"customer_id":"user-42","institution_id":"sandbox-bank"}'
 ```
 
-No sandbox, a resposta traz a conexão e `authorization_url`. O link vence em dez minutos e só pode ser usado uma vez. A aprovação enfileira a primeira sincronização. O consentimento simulado dura 90 dias, contados da criação da conexão; esse prazo não pretende reproduzir a regra de um banco. Para Efí, a conexão usa `api_credentials`, é criada ativa após verificar o acesso e não retorna link de autorização.
+No sandbox, a resposta traz a conexão e `authorization_url`. O link vence em dez minutos e só pode ser usado uma vez. A aprovação enfileira a primeira sincronização. O consentimento simulado dura 90 dias, contados da criação da conexão; esse prazo não pretende reproduzir a regra de um banco. Para Efí e Inter, a conexão usa `api_credentials`, é criada ativa após verificar o acesso e não retorna link de autorização.
 
 O [exemplo Go](examples/connect/main.go) mostra o fluxo completo. O contrato HTTP está em [docs/openapi.json](docs/openapi.json), e os detalhes de paginação, erros e estados em [docs/api.md](docs/api.md).
 
@@ -95,6 +107,6 @@ make build     # bin/ranjit, sem CGO
 
 Os testes usam SQLite em diretórios temporários e exercitam os handlers HTTP reais com transporte em memória. Cobrem consentimento, autenticação, paginação, isolamento dos IDs entre conexões, rollback, repetição de sincronização, concorrência, expiração e retomada após reinício.
 
-Antes de operar fora da máquina local, leia [operação](docs/operations.md). A versão atual tem uma chave por instalação e banco sem criptografia em repouso. A configuração escolhe um provedor por processo: sandbox ou uma aplicação Efí. Webhooks, múltiplos operadores, extratos completos e PostgreSQL ficam para mudanças com casos de uso definidos.
+Antes de operar fora da máquina local, leia [operação](docs/operations.md). A versão atual tem uma chave por instalação e banco sem criptografia em repouso. A configuração escolhe um provedor por processo: sandbox, Efí ou Inter. Cada conector direto acessa uma conta por instalação. Webhooks, múltiplos operadores, outros produtos bancários e PostgreSQL ficam para mudanças com casos de uso definidos.
 
 Contribuições: [CONTRIBUTING.md](CONTRIBUTING.md). Licença: [MIT](LICENSE).

@@ -76,3 +76,57 @@ func TestProviderFailureRetriesWithoutPersistingSensitiveError(t *testing.T) {
 		t.Fatalf("job = %+v, %v", done, err)
 	}
 }
+
+func TestRateLimitDelaySurvivesRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "db.sqlite")
+	db, err := store.Open(t.Context(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { db.Close() }()
+	now := time.Date(2026, 11, 7, 12, 0, 0, 0, time.UTC)
+	c := ranjit.Connection{ID: ranjit.NewID("con"), CustomerID: "test", InstitutionID: "sandbox-bank", Provider: "sandbox", Status: "active", CreatedAt: now, ConsentExpiresAt: now.Add(time.Hour)}
+	if err = db.CreateConnection(t.Context(), c, "unused", now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	job, err := db.Enqueue(t.Context(), c.ID, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	source := testSource{fetch: func(ctx context.Context, c ranjit.Connection) (provider.Snapshot, error) {
+		calls++
+		if calls == 1 {
+			return provider.Snapshot{}, &provider.RetryError{After: 2 * time.Minute}
+		}
+		return (sandbox.Source{}).Fetch(ctx, c)
+	}}
+	w := New(db, source, time.Hour, slog.Default())
+	w.Now = func() time.Time { return now }
+	if err = w.Step(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err = db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	db, err = store.Open(t.Context(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.Store = db
+	now = now.Add(119 * time.Second)
+	if err = w.Step(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 {
+		t.Fatal("restart lost the bank's retry delay")
+	}
+	now = now.Add(time.Second)
+	if err = w.Step(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	done, err := db.Job(t.Context(), job.ID)
+	if err != nil || done.Status != "succeeded" || done.Attempts != 2 {
+		t.Fatalf("job = %+v %v", done, err)
+	}
+}

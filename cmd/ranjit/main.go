@@ -17,6 +17,7 @@ import (
 	"github.com/getcortexlabs/ranjit/internal/httpapi"
 	"github.com/getcortexlabs/ranjit/internal/provider"
 	"github.com/getcortexlabs/ranjit/internal/provider/efi"
+	"github.com/getcortexlabs/ranjit/internal/provider/inter"
 	"github.com/getcortexlabs/ranjit/internal/provider/sandbox"
 	"github.com/getcortexlabs/ranjit/internal/service"
 	"github.com/getcortexlabs/ranjit/internal/store"
@@ -64,6 +65,14 @@ func run(logger *slog.Logger) error {
 	var source provider.Source = sandbox.Source{}
 	if cfg.Provider == "efi" {
 		bank, err := efi.New(cfg.EFI)
+		if err != nil {
+			return err
+		}
+		defer bank.Close()
+		source = bank
+	}
+	if cfg.Provider == "inter" {
+		bank, err := inter.New(cfg.Inter)
 		if err != nil {
 			return err
 		}

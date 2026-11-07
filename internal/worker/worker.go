@@ -87,5 +87,9 @@ func (w *Worker) Step(ctx context.Context) error {
 	}
 	// Provider responses can contain account data or credentials. Persist only a bounded error code.
 	w.Logger.Warn("sync failed", "job_id", j.ID, "code", code, "attempt", j.Attempts)
+	var retry *provider.RetryError
+	if errors.As(fetchErr, &retry) {
+		return w.Store.FailAfter(ctx, j, code, w.Now(), retry.After)
+	}
 	return w.Store.Fail(ctx, j, code, w.Now())
 }

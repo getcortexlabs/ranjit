@@ -24,6 +24,12 @@ type CredentialSource interface {
 	Verify(context.Context) error
 }
 
+// RetryError lets the worker defer a rate-limited request without holding a lease open.
+type RetryError struct{ After time.Duration }
+
+func (*RetryError) Error() string { return "provider rate limit reached" }
+func (*RetryError) Unwrap() error { return ranjit.ErrProviderUnavailable }
+
 type Account struct {
 	ExternalID string
 	Name       string

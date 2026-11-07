@@ -109,11 +109,16 @@ func (s *Store) Claim(ctx context.Context, now time.Time, lease time.Duration) (
 }
 
 func (s *Store) Fail(ctx context.Context, j ranjit.Job, code string, now time.Time) error {
+	return s.FailAfter(ctx, j, code, now, 0)
+}
+
+func (s *Store) FailAfter(ctx context.Context, j ranjit.Job, code string, now time.Time, retryAfter time.Duration) error {
 	status := "queued"
 	if j.Attempts >= MaxAttempts || code == "invalid_provider_data" || code == "provider_credentials" {
 		status = "failed"
 	}
 	delay := time.Duration(1<<min(j.Attempts, MaxAttempts)) * time.Second
+	delay = max(delay, min(retryAfter, 5*time.Minute))
 	result, err := s.db.ExecContext(ctx, `UPDATE jobs SET status = ?, error_code = ?, updated_at = ?, available_at = ?, lease_token = '', lease_until = 0
 		WHERE id = ? AND status = 'running' AND lease_token = ? AND lease_until > ?`, status, code, now.UnixMilli(), now.Add(delay).UnixMilli(), j.ID, j.LeaseToken, now.UnixMilli())
 	return changed(result, err, ranjit.ErrLease)
