@@ -122,6 +122,11 @@ func Restore(ctx context.Context, source, destination string, replace bool) (str
 	if err = os.MkdirAll(filepath.Dir(dst), 0700); err != nil {
 		return "", err
 	}
+	parent, err := filepath.EvalSymlinks(filepath.Dir(dst))
+	if err != nil {
+		return "", err
+	}
+	dst = filepath.Join(parent, filepath.Base(dst))
 	guard, err := filelock.Acquire(dst+".lock", true)
 	if err != nil {
 		return "", err
@@ -250,6 +255,10 @@ func BackupStopped(ctx context.Context, path, destination string) (func(), error
 		return nil, err
 	}
 	if err = os.MkdirAll(filepath.Dir(abs), 0700); err != nil {
+		return nil, err
+	}
+	abs, err = canonicalPath(abs)
+	if err != nil {
 		return nil, err
 	}
 	guard, err := filelock.Acquire(abs+".lock", true)

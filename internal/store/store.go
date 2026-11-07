@@ -38,11 +38,8 @@ func open(ctx context.Context, path string, acquire bool) (*Store, error) {
 	if err = os.MkdirAll(filepath.Dir(abs), 0700); err != nil {
 		return nil, err
 	}
-	f, err := os.OpenFile(abs, os.O_CREATE|os.O_RDWR, 0600)
+	abs, err = canonicalPath(abs)
 	if err != nil {
-		return nil, err
-	}
-	if err = f.Close(); err != nil {
 		return nil, err
 	}
 	var guard *filelock.Lock
@@ -58,6 +55,13 @@ func open(ctx context.Context, path string, acquire bool) (*Store, error) {
 			guard.Close()
 		}
 	}()
+	f, err := os.OpenFile(abs, os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		return nil, err
+	}
+	if err = f.Close(); err != nil {
+		return nil, err
+	}
 	u := databaseURL(abs)
 	q := url.Values{"_pragma": {"foreign_keys(1)", "busy_timeout(5000)", "journal_mode(WAL)", "synchronous(FULL)"}, "_txlock": {"immediate"}}
 	u.RawQuery = q.Encode()
@@ -194,4 +198,19 @@ func databaseURL(path string) url.URL {
 		uriPath = "/" + uriPath
 	}
 	return url.URL{Scheme: "file", Path: uriPath}
+}
+
+func canonicalPath(path string) (string, error) {
+	resolved, err := filepath.EvalSymlinks(path)
+	if err == nil {
+		return resolved, nil
+	}
+	if !os.IsNotExist(err) {
+		return "", err
+	}
+	parent, err := filepath.EvalSymlinks(filepath.Dir(path))
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(parent, filepath.Base(path)), nil
 }

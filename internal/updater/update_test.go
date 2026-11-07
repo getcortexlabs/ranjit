@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -107,5 +108,43 @@ func TestArchivesAndVersions(t *testing.T) {
 	req, _ = http.NewRequest("GET", "https://evil.example/file", nil)
 	if c.HTTP.CheckRedirect(req, nil) == nil {
 		t.Fatal("untrusted redirect")
+	}
+}
+
+func TestReplaceRunningExecutable(t *testing.T) {
+	if os.Getenv("RANJIT_TEST_UPDATE_HELPER") == "1" {
+		target, err := os.Executable()
+		if err != nil {
+			t.Fatal(err)
+		}
+		stage := filepath.Join(filepath.Dir(target), "staged")
+		if err = os.WriteFile(stage, []byte("replacement"), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = Install(stage, target); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	original, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(t.TempDir(), "runner.exe")
+	if err = os.WriteFile(target, data, 0755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.CommandContext(t.Context(), target, "-test.run=^TestReplaceRunningExecutable$")
+	cmd.Env = append(os.Environ(), "RANJIT_TEST_UPDATE_HELPER=1")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("replace active executable: %v %s", err, output)
+	}
+	got, err := os.ReadFile(target)
+	if err != nil || string(got) != "replacement" {
+		t.Fatal("replacement missing", err)
 	}
 }

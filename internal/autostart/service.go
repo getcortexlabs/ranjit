@@ -84,7 +84,8 @@ func Build(platform, home, config, executable, userID string) (Plan, error) {
 		p.Stop = [][]string{{"schtasks", "/End", "/TN", id}}
 		p.Status = [][]string{{"schtasks", "/Query", "/TN", id}}
 		p.Install = append([][]string{{"schtasks", "/Create", "/TN", id, "/XML", p.Path}}, p.Start...)
-		p.Uninstall = [][]string{{"schtasks", "/Delete", "/TN", id, "/F"}}
+		// Deleting a task alone leaves an already-running instance alive.
+		p.Uninstall = [][]string{{"powershell", "-NoProfile", "-NonInteractive", "-Command", "$ErrorActionPreference='Stop'; $t=Get-ScheduledTask -TaskName '" + id + "' -ErrorAction SilentlyContinue; if($t){Stop-ScheduledTask -InputObject $t; Unregister-ScheduledTask -InputObject $t -Confirm:$false}"}}
 	default:
 		return p, errors.New("user services support Linux, macOS and Windows")
 	}
@@ -128,6 +129,10 @@ func (p Plan) Run(ctx context.Context, action string) (string, error) {
 		out, err := exec.CommandContext(ctx, args[0], args[1:]...).CombinedOutput()
 		result.Write(out)
 		if err != nil {
+			var exit *exec.ExitError
+			if action == "uninstall" && args[0] == "launchctl" && errors.As(err, &exit) && (exit.ExitCode() == 3 || exit.ExitCode() == 113) {
+				continue
+			}
 			return result.String(), fmt.Errorf("%s failed: %w (service file: %s)", args[0], err, p.Path)
 		}
 	}

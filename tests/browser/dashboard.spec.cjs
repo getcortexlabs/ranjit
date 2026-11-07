@@ -23,15 +23,13 @@ test("first use, mapped preview, import, search, duplicate and deletion", async 
   await page
     .getByRole("button", { name: "＋ Importar extrato", exact: true })
     .click();
-  await page
-    .locator("#statement-file")
-    .setInputFiles({
-      name: "extrato.csv",
-      mimeType: "text/csv",
-      buffer: Buffer.from(
-        "Quando;Texto;Quantia;Código\n07/11/2026;Mercado do bairro;-123,45;tx1\n06/11/2026;Salário;4500,00;tx2\n",
-      ),
-    });
+  await page.locator("#statement-file").setInputFiles({
+    name: "extrato.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from(
+      "Quando;Texto;Quantia;Código\n07/11/2026;Mercado do bairro;-123,45;tx1\n06/11/2026;Salário;4500,00;tx2\n",
+    ),
+  });
   await expect(page.locator('[data-column="date"] option')).toHaveCount(5);
   await page.locator("#import-account").fill("Conta pessoal");
   await page.locator("#decimal").selectOption(",");
@@ -84,9 +82,7 @@ test("first use, mapped preview, import, search, duplicate and deletion", async 
   );
   await expect(page.locator("#confirm-import")).toBeDisabled();
   await page.setViewportSize({ width: 390, height: 844 });
-  await page
-    .getByRole("button", { name: "Visão geral 01", exact: true })
-    .click();
+  await page.locator('nav [data-view="overview"]').click();
   await page.screenshot({
     path: info.outputPath("overview-mobile.png"),
     fullPage: true,
@@ -96,9 +92,7 @@ test("first use, mapped preview, import, search, duplicate and deletion", async 
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBeTruthy();
-  await page
-    .getByRole("button", { name: "Conexões e dados 04", exact: true })
-    .click();
+  await page.locator('nav [data-view="settings"]').click();
   await page
     .getByRole("button", { name: "Excluir dados", exact: true })
     .click();
