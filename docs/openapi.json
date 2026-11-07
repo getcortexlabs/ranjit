@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Ranjit API",
-    "version": "0.3.0",
+    "version": "0.4.0",
     "description": "Self-hosted financial data API with a local sandbox and direct Efí / Inter Empresas adapters. Bank account access requires credentials issued to the operator; coverage depends on the provider.",
     "license": {
       "name": "MIT",
@@ -642,7 +642,10 @@
             "enum": [
               "sandbox",
               "efi",
-              "inter"
+              "inter",
+              "sicoob",
+              "c6",
+              "santander"
             ]
           },
           "sandbox": {
@@ -690,7 +693,10 @@
             "enum": [
               "sandbox",
               "efi",
-              "inter"
+              "inter",
+              "sicoob",
+              "c6",
+              "santander"
             ]
           },
           "status": {
@@ -750,7 +756,10 @@
               "sandbox-bank",
               "sandbox-credit-union",
               "efi",
-              "inter"
+              "inter",
+              "sicoob",
+              "c6",
+              "santander"
             ]
           }
         },

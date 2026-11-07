@@ -15,7 +15,7 @@ type Source interface {
 
 ## Uma integração real exige mais que Fetch
 
-A configuração seleciona `sandbox`, `efi` ou `inter`. Os conectores [Efí](efi.md) e [Inter](inter.md) implementam `CredentialSource`, que acrescenta `CredentialID()` e `Verify(ctx)` ao contrato de ingestão. Isso permite verificar o acesso instalado pelo titular e vincular cada conexão à aplicação correspondente. Cada conector cobre a própria conta. `data_coverage` descreve quais dados a integração entrega. A página `/sandbox/authorize` não deve ser reaproveitada como callback de um banco.
+A configuração seleciona `sandbox`, `efi`, `inter`, `sicoob`, `c6` ou `santander`. Os conectores [Efí](efi.md), [Inter](inter.md), [Sicoob](sicoob.md), [C6](c6.md) e [Santander](santander.md) implementam `CredentialSource`, que acrescenta `CredentialID()` e `Verify(ctx)` ao contrato de ingestão. Isso permite verificar o acesso instalado pelo titular e vincular cada conexão à aplicação correspondente. Cada conector cobre a própria conta. `data_coverage` descreve quais dados a integração entrega. A página `/sandbox/authorize` não deve ser reaproveitada como callback de um banco.
 
 Um adaptador para compartilhamento pelo Open Finance precisa implementar e testar o fluxo oferecido pela operação habilitada: início da autorização, vínculo entre usuário e consentimento, callback autenticado, troca e renovação de credenciais, expiração, revogação remota e os estados de falha. O conjunto exato depende da integração contratada.
 

@@ -16,9 +16,12 @@ import (
 	"github.com/getcortexlabs/ranjit/internal/config"
 	"github.com/getcortexlabs/ranjit/internal/httpapi"
 	"github.com/getcortexlabs/ranjit/internal/provider"
+	"github.com/getcortexlabs/ranjit/internal/provider/c6"
 	"github.com/getcortexlabs/ranjit/internal/provider/efi"
 	"github.com/getcortexlabs/ranjit/internal/provider/inter"
 	"github.com/getcortexlabs/ranjit/internal/provider/sandbox"
+	"github.com/getcortexlabs/ranjit/internal/provider/santander"
+	"github.com/getcortexlabs/ranjit/internal/provider/sicoob"
 	"github.com/getcortexlabs/ranjit/internal/service"
 	"github.com/getcortexlabs/ranjit/internal/store"
 	"github.com/getcortexlabs/ranjit/internal/worker"
@@ -73,6 +76,30 @@ func run(logger *slog.Logger) error {
 	}
 	if cfg.Provider == "inter" {
 		bank, err := inter.New(cfg.Inter)
+		if err != nil {
+			return err
+		}
+		defer bank.Close()
+		source = bank
+	}
+	if cfg.Provider == "sicoob" {
+		bank, err := sicoob.New(cfg.Sicoob)
+		if err != nil {
+			return err
+		}
+		defer bank.Close()
+		source = bank
+	}
+	if cfg.Provider == "c6" {
+		bank, err := c6.New(cfg.C6)
+		if err != nil {
+			return err
+		}
+		defer bank.Close()
+		source = bank
+	}
+	if cfg.Provider == "santander" {
+		bank, err := santander.New(cfg.Santander)
 		if err != nil {
 			return err
 		}

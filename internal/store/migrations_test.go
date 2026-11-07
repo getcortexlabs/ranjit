@@ -111,3 +111,53 @@ func TestInterMigrationPreservesEFICredentialBinding(t *testing.T) {
 		}
 	}
 }
+
+func TestBankMigrationPreservesInterCredentialBinding(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "inter.db")
+	old, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer old.Close()
+	if _, err = old.Exec(`CREATE TABLE schema_migrations (name TEXT PRIMARY KEY)`); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"001_init.sql", "002_bank_credentials.sql", "003_inter.sql"} {
+		body, err := migrations.ReadFile("migrations/" + name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = old.Exec(string(body)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = old.Exec(`INSERT INTO schema_migrations VALUES (?)`, name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err = old.Exec(`
+		INSERT INTO connections VALUES ('con-inter','customer','inter','inter','active',1,9999999999999,NULL,NULL,0,'api_credentials','existing-binding');
+		INSERT INTO accounts VALUES ('acc-inter','con-inter','own-account','Account','payment',100,'BRL',1);
+		INSERT INTO transactions VALUES ('txn-inter','acc-inter','external','Test',100,'BRL','2026-11-01','booked');
+		INSERT INTO jobs(id,connection_id,status,created_at,updated_at,available_at) VALUES ('job-inter','con-inter','queued',1,1,1);
+	`); err != nil {
+		t.Fatal(err)
+	}
+	if err = old.Close(); err != nil {
+		t.Fatal(err)
+	}
+	db, err := Open(t.Context(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	c, err := db.Connection(t.Context(), "con-inter", time.Now())
+	if err != nil || c.CredentialID != "existing-binding" || c.AuthorizationMode != "api_credentials" {
+		t.Fatalf("lost Inter binding: %+v %v", c, err)
+	}
+	for _, table := range []string{"accounts", "transactions", "jobs"} {
+		var count int
+		if err = db.db.QueryRow(`SELECT count(*) FROM ` + table).Scan(&count); err != nil || count != 1 {
+			t.Fatalf("migration lost %s: %v", table, err)
+		}
+	}
+}

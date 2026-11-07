@@ -9,8 +9,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/getcortexlabs/ranjit/internal/provider/c6"
 	"github.com/getcortexlabs/ranjit/internal/provider/efi"
 	"github.com/getcortexlabs/ranjit/internal/provider/inter"
+	"github.com/getcortexlabs/ranjit/internal/provider/santander"
+	"github.com/getcortexlabs/ranjit/internal/provider/sicoob"
 )
 
 type Config struct {
@@ -22,6 +25,9 @@ type Config struct {
 	Provider     string
 	EFI          efi.Config
 	Inter        inter.Config
+	Sicoob       sicoob.Config
+	Santander    santander.Config
+	C6           c6.Config
 }
 
 func Load() (Config, error) {
@@ -30,8 +36,8 @@ func Load() (Config, error) {
 		return c, fmt.Errorf("RANJIT_API_KEY must contain at least 32 bytes without whitespace; run 'ranjit init' to generate one")
 	}
 	c.Provider = env("RANJIT_PROVIDER", "sandbox")
-	if c.Provider != "sandbox" && c.Provider != "efi" && c.Provider != "inter" {
-		return c, fmt.Errorf("RANJIT_PROVIDER must be sandbox, efi or inter")
+	if c.Provider != "sandbox" && c.Provider != "efi" && c.Provider != "inter" && c.Provider != "sicoob" && c.Provider != "c6" && c.Provider != "santander" {
+		return c, fmt.Errorf("RANJIT_PROVIDER must be sandbox, efi, inter, sicoob, c6 or santander")
 	}
 	if c.Provider == "efi" {
 		days, err := strconv.Atoi(env("RANJIT_EFI_LOOKBACK_DAYS", "90"))
@@ -57,6 +63,51 @@ func Load() (Config, error) {
 		}
 		if c.Inter.ClientID == "" || c.Inter.ClientSecretFile == "" || c.Inter.CertificateFile == "" || c.Inter.PrivateKeyFile == "" || c.Inter.Account == "" {
 			return c, fmt.Errorf("Inter requires RANJIT_INTER_CLIENT_ID, RANJIT_INTER_CLIENT_SECRET_FILE, RANJIT_INTER_CERT_FILE, RANJIT_INTER_KEY_FILE and RANJIT_INTER_ACCOUNT")
+		}
+	}
+	if c.Provider == "santander" {
+		days, err := strconv.Atoi(env("RANJIT_SANTANDER_LOOKBACK_DAYS", "7"))
+		if err != nil || days < 1 || days > 90 {
+			return c, fmt.Errorf("RANJIT_SANTANDER_LOOKBACK_DAYS must be between 1 and 90")
+		}
+		c.Santander = santander.Config{Environment: env("RANJIT_SANTANDER_ENV", "sandbox"), ClientID: os.Getenv("RANJIT_SANTANDER_CLIENT_ID"), ClientSecretFile: os.Getenv("RANJIT_SANTANDER_CLIENT_SECRET_FILE"), CertificateFile: os.Getenv("RANJIT_SANTANDER_CERT_FILE"), PrivateKeyFile: os.Getenv("RANJIT_SANTANDER_KEY_FILE"), Account: os.Getenv("RANJIT_SANTANDER_ACCOUNT"), LookbackDays: days}
+		if c.Santander.Environment != "sandbox" && c.Santander.Environment != "production" {
+			return c, fmt.Errorf("RANJIT_SANTANDER_ENV must be sandbox or production")
+		}
+		if c.Santander.ClientID == "" || c.Santander.ClientSecretFile == "" || c.Santander.CertificateFile == "" || c.Santander.PrivateKeyFile == "" || c.Santander.Account == "" {
+			return c, fmt.Errorf("Santander requires RANJIT_SANTANDER_CLIENT_ID, RANJIT_SANTANDER_CLIENT_SECRET_FILE, RANJIT_SANTANDER_CERT_FILE, RANJIT_SANTANDER_KEY_FILE and RANJIT_SANTANDER_ACCOUNT")
+		}
+	}
+	if c.Provider == "sicoob" {
+		days, err := strconv.Atoi(env("RANJIT_SICOOB_LOOKBACK_DAYS", "7"))
+		if err != nil || days < 1 || days > 90 {
+			return c, fmt.Errorf("RANJIT_SICOOB_LOOKBACK_DAYS must be between 1 and 90")
+		}
+		c.Sicoob = sicoob.Config{Environment: env("RANJIT_SICOOB_ENV", "sandbox"), ClientID: os.Getenv("RANJIT_SICOOB_CLIENT_ID"), AccessTokenFile: os.Getenv("RANJIT_SICOOB_ACCESS_TOKEN_FILE"), CertificateFile: os.Getenv("RANJIT_SICOOB_CERT_FILE"), PrivateKeyFile: os.Getenv("RANJIT_SICOOB_KEY_FILE"), Account: os.Getenv("RANJIT_SICOOB_ACCOUNT"), LookbackDays: days}
+		if c.Sicoob.Environment != "sandbox" && c.Sicoob.Environment != "production" {
+			return c, fmt.Errorf("RANJIT_SICOOB_ENV must be sandbox or production")
+		}
+		if c.Sicoob.ClientID == "" || c.Sicoob.Account == "" {
+			return c, fmt.Errorf("Sicoob requires RANJIT_SICOOB_CLIENT_ID and RANJIT_SICOOB_ACCOUNT")
+		}
+		if c.Sicoob.Environment == "sandbox" && c.Sicoob.AccessTokenFile == "" {
+			return c, fmt.Errorf("Sicoob sandbox requires RANJIT_SICOOB_ACCESS_TOKEN_FILE")
+		}
+		if c.Sicoob.Environment == "production" && (c.Sicoob.CertificateFile == "" || c.Sicoob.PrivateKeyFile == "" || c.Sicoob.AccessTokenFile != "") {
+			return c, fmt.Errorf("Sicoob production requires RANJIT_SICOOB_CERT_FILE and RANJIT_SICOOB_KEY_FILE; unset RANJIT_SICOOB_ACCESS_TOKEN_FILE")
+		}
+	}
+	if c.Provider == "c6" {
+		days, err := strconv.Atoi(env("RANJIT_C6_LOOKBACK_DAYS", "7"))
+		if err != nil || days < 1 || days > 90 {
+			return c, fmt.Errorf("RANJIT_C6_LOOKBACK_DAYS must be between 1 and 90")
+		}
+		c.C6 = c6.Config{Environment: env("RANJIT_C6_ENV", "sandbox"), ClientID: os.Getenv("RANJIT_C6_CLIENT_ID"), ClientSecretFile: os.Getenv("RANJIT_C6_CLIENT_SECRET_FILE"), CertificateFile: os.Getenv("RANJIT_C6_CERT_FILE"), PrivateKeyFile: os.Getenv("RANJIT_C6_KEY_FILE"), LookbackDays: days}
+		if c.C6.Environment != "sandbox" && c.C6.Environment != "production" {
+			return c, fmt.Errorf("RANJIT_C6_ENV must be sandbox or production")
+		}
+		if c.C6.ClientID == "" || c.C6.ClientSecretFile == "" || c.C6.CertificateFile == "" || c.C6.PrivateKeyFile == "" {
+			return c, fmt.Errorf("C6 requires RANJIT_C6_CLIENT_ID, RANJIT_C6_CLIENT_SECRET_FILE, RANJIT_C6_CERT_FILE and RANJIT_C6_KEY_FILE")
 		}
 	}
 	if _, _, err := net.SplitHostPort(c.Addr); err != nil {

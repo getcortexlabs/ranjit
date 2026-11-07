@@ -10,9 +10,9 @@ Use `Authorization: Bearer <chave>` em todas as rotas `/v1`. A instalação repr
 
 ## Conexões diretas
 
-Com `RANJIT_PROVIDER=efi`, envie `institution_id: efi`. Com `RANJIT_PROVIDER=inter`, envie `institution_id: inter`. A criação verifica a aplicação configurada localmente, cria a conexão ativa e enfileira a primeira sincronização. A resposta traz apenas `connection`; não há URL de consentimento. `authorization_mode: api_credentials` identifica esse fluxo. O campo `consent_expires_at` representa o limite local de coleta de 90 dias, independente da validade bancária.
+Nos conectores diretos, `institution_id` é o nome do provedor selecionado: `efi`, `inter`, `sicoob`, `c6` ou `santander`. A criação verifica a aplicação configurada localmente, cria a conexão ativa e enfileira a primeira sincronização. A resposta traz apenas `connection`; não há URL de consentimento. `authorization_mode: api_credentials` identifica esse fluxo. O campo `consent_expires_at` representa o limite local de coleta de 90 dias, independente da validade bancária.
 
-`GET /v1/institutions` informa `connection_mode`, `sandbox` e `data_coverage`. Para Efí, o histórico cobre recebimentos Pix e suas devoluções concluídas; não representa o extrato completo. Consulte o [guia Efí](efi.md). O Inter cobre saldo disponível e extrato da conta PJ; veja o [guia Inter](inter.md).
+`GET /v1/institutions` informa `connection_mode`, `sandbox` e `data_coverage`. Para Efí, o histórico cobre recebimentos Pix e suas devoluções concluídas; não representa o extrato completo. Consulte o [guia Efí](efi.md). O Inter cobre saldo disponível e extrato da conta PJ; veja o [guia Inter](inter.md). Os contratos e limites de [Sicoob](sicoob.md), [C6](c6.md) e [Santander](santander.md) estão nos respectivos guias.
 
 ## Consentimento simulado
 

@@ -2,7 +2,7 @@
 
 Uma API em Go para conectar contas, acompanhar consentimentos e consultar dados financeiros no mesmo formato.
 
-O Ranjit cuida da integração dentro da aplicação: estado da conexão, fila de sincronização, contas, saldos e transações. Inclui um sandbox local e conectores diretos para a própria conta Efí e Inter Empresas. A cobertura de dados depende do banco.
+O Ranjit cuida da integração dentro da aplicação: estado da conexão, fila de sincronização, contas, saldos e transações. Inclui um sandbox local e conectores diretos para a própria conta Efí, Inter Empresas, Sicoob, C6 Empresas e Santander Empresas. A cobertura de dados depende do banco.
 
 As integrações diretas usam as credenciais da aplicação criada pelo titular no banco. Para compartilhamento entre bancos pelo Open Finance, ainda é necessária uma operação habilitada e outro adaptador. Os [limites de acesso](docs/open-finance.md) estão documentados com as referências oficiais.
 
@@ -51,11 +51,20 @@ O [guia Inter](docs/inter.md) explica como configurar a API Banking para consult
 
 Os testes locais usam respostas simuladas. A validação com uma conta Inter habilitada ainda está pendente.
 
+## Sicoob, C6 Empresas e Santander Empresas
+
+Os guias de [Sicoob](docs/sicoob.md), [C6 Empresas](docs/c6.md) e [Santander Empresas](docs/santander.md) explicam como configurar cada aplicação para consultar saldo e extrato da própria conta. Cada banco tem seus requisitos de habilitação e seu ambiente de testes.
+
+Os três conectores têm testes locais com respostas simuladas. A homologação com credenciais bancárias está pendente. No Santander, o guia registra uma divergência entre o Swagger e a coleção Postman que precisa ser conferida nessa etapa.
+
 | Provedor | Acesso | Cobertura |
 | --- | --- | --- |
 | `sandbox` | Local, sem credenciais bancárias | Contas e transações fictícias |
 | `efi` | Aplicação Efí habilitada | Saldo, Pix recebidos e suas devoluções |
 | `inter` | Aplicação Inter Empresas PJ habilitada | Saldo disponível e extrato da conta |
+| `sicoob` | Aplicação do cooperado habilitada | Saldo e extrato mensal |
+| `c6` | Aplicação C6 Empresas PJ habilitada | Saldo disponível e extrato |
+| `santander` | Aplicação Santander Empresas habilitada | Saldo disponível e lançamentos efetivados |
 
 ## Integrar
 
@@ -72,7 +81,7 @@ curl http://localhost:8080/v1/connections \
   -d '{"customer_id":"user-42","institution_id":"sandbox-bank"}'
 ```
 
-No sandbox, a resposta traz a conexão e `authorization_url`. O link vence em dez minutos e só pode ser usado uma vez. A aprovação enfileira a primeira sincronização. O consentimento simulado dura 90 dias, contados da criação da conexão; esse prazo não pretende reproduzir a regra de um banco. Para Efí e Inter, a conexão usa `api_credentials`, é criada ativa após verificar o acesso e não retorna link de autorização.
+No sandbox, a resposta traz a conexão e `authorization_url`. O link vence em dez minutos e só pode ser usado uma vez. A aprovação enfileira a primeira sincronização. O consentimento simulado dura 90 dias, contados da criação da conexão; esse prazo não pretende reproduzir a regra de um banco. Nos conectores diretos, a conexão usa `api_credentials`, é criada ativa após verificar o acesso e não retorna link de autorização.
 
 O [exemplo Go](examples/connect/main.go) mostra o fluxo completo. O contrato HTTP está em [docs/openapi.json](docs/openapi.json), e os detalhes de paginação, erros e estados em [docs/api.md](docs/api.md).
 
@@ -107,6 +116,6 @@ make build     # bin/ranjit, sem CGO
 
 Os testes usam SQLite em diretórios temporários e exercitam os handlers HTTP reais com transporte em memória. Cobrem consentimento, autenticação, paginação, isolamento dos IDs entre conexões, rollback, repetição de sincronização, concorrência, expiração e retomada após reinício.
 
-Antes de operar fora da máquina local, leia [operação](docs/operations.md). A versão atual tem uma chave por instalação e banco sem criptografia em repouso. A configuração escolhe um provedor por processo: sandbox, Efí ou Inter. Cada conector direto acessa uma conta por instalação. Webhooks, múltiplos operadores, outros produtos bancários e PostgreSQL ficam para mudanças com casos de uso definidos.
+Antes de operar fora da máquina local, leia [operação](docs/operations.md). A versão atual tem uma chave por instalação e banco sem criptografia em repouso. A configuração escolhe um provedor por processo: sandbox, Efí, Inter, Sicoob, C6 ou Santander. Cada conector direto acessa uma conta por instalação. Webhooks, múltiplos operadores, outros produtos bancários e PostgreSQL ficam para mudanças com casos de uso definidos.
 
 Contribuições: [CONTRIBUTING.md](CONTRIBUTING.md). Licença: [MIT](LICENSE).

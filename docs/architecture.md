@@ -20,6 +20,9 @@ aplicação → API HTTP → serviço / armazenamento → SQLite
 | `internal/provider/sandbox` | Instituições e dados fictícios reproduzíveis |
 | `internal/provider/efi` | Consulta direta de saldo, recebimentos Pix e devoluções na Efí |
 | `internal/provider/inter` | Consulta de saldo disponível e extrato da conta Inter Empresas PJ |
+| `internal/provider/sicoob` | Consulta mensal de extrato e saldo da conta do cooperado |
+| `internal/provider/c6` | Consulta de saldo e extrato C6 Empresas em intervalos de até 30 dias |
+| `internal/provider/santander` | Consulta de saldo e extrato Santander Empresas com offset |
 | `internal/worker` | Agendamento, tentativas e execução da sincronização |
 
 As consultas simples vão do handler ao armazenamento. O fluxo de consentimento passa pelo serviço. Não existe uma interface de repositório que apenas repete os métodos de um único banco. A interface de provedor existe porque essa é uma fronteira concreta de integração.

@@ -1,6 +1,6 @@
 # Operação
 
-O servidor pode usar o sandbox local ou os conectores diretos Efí e Inter. Configure as credenciais da própria conta seguindo o [guia Efí](efi.md) ou o [guia Inter](inter.md); o deploy sozinho não habilita acesso bancário.
+O servidor pode usar o sandbox local ou os conectores diretos Efí, Inter, Sicoob, C6 e Santander. Configure as credenciais da própria conta seguindo o [guia do provedor](providers.md); o deploy sozinho não habilita acesso bancário.
 
 ## Configuração
 
@@ -10,7 +10,7 @@ O servidor pode usar o sandbox local ou os conectores diretos Efí e Inter. Conf
 | `RANJIT_ADDR` | `127.0.0.1:8080` | Endereço de escuta HTTP |
 | `RANJIT_BASE_URL` | `http://localhost:8080` | Origem pública dos links de consentimento |
 | `RANJIT_DATABASE` | `./data/ranjit.db` | Caminho do arquivo SQLite |
-| `RANJIT_PROVIDER` | `sandbox` | `sandbox`, `efi` ou `inter` |
+| `RANJIT_PROVIDER` | `sandbox` | `sandbox`, `efi`, `inter`, `sicoob`, `c6` ou `santander` |
 | `RANJIT_SYNC_INTERVAL` | `1h` | Intervalo do agendador; mínimo `1m` |
 
 O binário lê variáveis de ambiente. Quem carrega `.env` é o Makefile ou o Compose. Ao executar `bin/ranjit` diretamente, exporte as variáveis antes. `ranjit init` cria o arquivo sem sobrescrever outro existente; `ranjit version` imprime a versão; `ranjit healthcheck` verifica `/readyz` no endereço local.

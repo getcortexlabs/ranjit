@@ -47,11 +47,19 @@ func NewMTLSClient(certificateFile, keyFile string) (*http.Client, error) {
 	if now.Before(cert.Leaf.NotBefore) || !now.Before(cert.Leaf.NotAfter) {
 		return nil, errors.New("bank certificate is not currently valid")
 	}
+	client := NewTLSClient()
+	client.Transport.(*http.Transport).TLSClientConfig.Certificates = []tls.Certificate{cert}
+	return client, nil
+}
+
+// NewTLSClient is used by bank sandboxes that issue a static access token.
+// It has the same timeouts and redirect policy as the mTLS transport.
+func NewTLSClient() *http.Client {
 	transport := &http.Transport{
 		DialContext:         (&net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
-		TLSClientConfig:     &tls.Config{MinVersion: tls.VersionTLS12, Certificates: []tls.Certificate{cert}},
+		TLSClientConfig:     &tls.Config{MinVersion: tls.VersionTLS12},
 		TLSHandshakeTimeout: 5 * time.Second, ResponseHeaderTimeout: 10 * time.Second,
 		MaxIdleConns: 4, MaxIdleConnsPerHost: 2, IdleConnTimeout: 60 * time.Second,
 	}
-	return &http.Client{Transport: transport, Timeout: 15 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, nil
+	return &http.Client{Transport: transport, Timeout: 15 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 }
