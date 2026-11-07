@@ -12,8 +12,8 @@ type Source struct{}
 
 func (Source) Institutions() []ranjit.Institution {
 	return []ranjit.Institution{
-		{ID: "sandbox-bank", Name: "Banco de teste", Provider: "sandbox", Sandbox: true},
-		{ID: "sandbox-credit-union", Name: "Cooperativa de teste", Provider: "sandbox", Sandbox: true},
+		{ID: "sandbox-bank", Name: "Banco de teste", Provider: "sandbox", Sandbox: true, ConnectionMode: "sandbox_consent", DataCoverage: []string{"synthetic_accounts", "synthetic_transactions"}},
+		{ID: "sandbox-credit-union", Name: "Cooperativa de teste", Provider: "sandbox", Sandbox: true, ConnectionMode: "sandbox_consent", DataCoverage: []string{"synthetic_accounts", "synthetic_transactions"}},
 	}
 }
 

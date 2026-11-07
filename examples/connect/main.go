@@ -29,11 +29,22 @@ func run() error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
-	result, err := client.Connect(ctx, ranjit.ConnectRequest{CustomerID: "demo-customer", InstitutionID: "sandbox-bank"})
+	institutions, err := client.Institutions(ctx)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Autorize os dados de teste no navegador:\n%s\n", result.AuthorizationURL)
+	if len(institutions.Data) == 0 {
+		return fmt.Errorf("no configured institution")
+	}
+	result, err := client.Connect(ctx, ranjit.ConnectRequest{CustomerID: "local-user", InstitutionID: institutions.Data[0].ID})
+	if err != nil {
+		return err
+	}
+	if result.AuthorizationURL != "" {
+		fmt.Printf("Autorize os dados de teste no navegador:\n%s\n", result.AuthorizationURL)
+	} else {
+		fmt.Printf("Conexão com %s criada. Aguardando sincronização.\n", institutions.Data[0].Name)
+	}
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	for {

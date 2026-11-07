@@ -110,7 +110,7 @@ func (s *Store) Claim(ctx context.Context, now time.Time, lease time.Duration) (
 
 func (s *Store) Fail(ctx context.Context, j ranjit.Job, code string, now time.Time) error {
 	status := "queued"
-	if j.Attempts >= MaxAttempts || code == "invalid_provider_data" {
+	if j.Attempts >= MaxAttempts || code == "invalid_provider_data" || code == "provider_credentials" {
 		status = "failed"
 	}
 	delay := time.Duration(1<<min(j.Attempts, MaxAttempts)) * time.Second

@@ -82,6 +82,9 @@ func (w *Worker) Step(ctx context.Context) error {
 	if errors.Is(fetchErr, ranjit.ErrInvalid) {
 		code = "invalid_provider_data"
 	}
+	if errors.Is(fetchErr, ranjit.ErrProviderCredentials) {
+		code = "provider_credentials"
+	}
 	// Provider responses can contain account data or credentials. Persist only a bounded error code.
 	w.Logger.Warn("sync failed", "job_id", j.ID, "code", code, "attempt", j.Attempts)
 	return w.Store.Fail(ctx, j, code, w.Now())

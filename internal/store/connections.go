@@ -10,10 +10,37 @@ import (
 )
 
 func (s *Store) CreateConnection(ctx context.Context, c ranjit.Connection, tokenHash string, deadline time.Time) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO connections
-		(id, customer_id, institution_id, provider, status, created_at, consent_expires_at, token_hash, authorization_expires_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, c.ID, c.CustomerID, c.InstitutionID, c.Provider, c.Status, c.CreatedAt.UnixMilli(), c.ConsentExpiresAt.UnixMilli(), tokenHash, deadline.UnixMilli())
+	return insertConnection(ctx, s.db, c, tokenHash, deadline)
+}
+
+type executor interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+}
+
+func insertConnection(ctx context.Context, db executor, c ranjit.Connection, tokenHash any, deadline time.Time) error {
+	if c.AuthorizationMode == "" && c.Provider == "sandbox" {
+		c.AuthorizationMode = "sandbox_consent"
+	}
+	_, err := db.ExecContext(ctx, `INSERT INTO connections
+		(id, customer_id, institution_id, provider, status, created_at, consent_expires_at, token_hash, authorization_expires_at, authorization_mode, credential_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, c.ID, c.CustomerID, c.InstitutionID, c.Provider, c.Status, c.CreatedAt.UnixMilli(), c.ConsentExpiresAt.UnixMilli(), tokenHash, deadline.UnixMilli(), c.AuthorizationMode, c.CredentialID)
 	return err
+}
+
+// CreateAuthorizedConnection persists the operator's local grant and first job atomically.
+func (s *Store) CreateAuthorizedConnection(ctx context.Context, c ranjit.Connection) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err = insertConnection(ctx, tx, c, nil, time.Time{}); err != nil {
+		return err
+	}
+	if _, err = enqueue(ctx, tx, c.ID, c.CreatedAt); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *Store) Connection(ctx context.Context, id string, now time.Time) (ranjit.Connection, error) {

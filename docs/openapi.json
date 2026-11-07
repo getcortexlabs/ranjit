@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Ranjit API",
-    "version": "0.1.0",
-    "description": "Single-operator Open Finance integration sandbox. All financial data is fictional. Bearer credentials belong to the application backend. Customer IDs do not provide tenant isolation.",
+    "version": "0.2.0",
+    "description": "Single-operator financial API. Supports a local sandbox and the operator's own Efí account (balance, received Pix and completed refunds only). Efí access uses bank-issued application credentials; it is not Open Finance data sharing. Bearer credentials belong to the backend. Customer IDs do not provide tenant isolation.",
     "license": {
       "name": "MIT",
       "identifier": "MIT"
@@ -96,7 +96,7 @@
     "/v1/institutions": {
       "get": {
         "operationId": "listInstitutions",
-        "summary": "List sandbox institutions",
+        "summary": "List configured institutions and data coverage",
         "responses": {
           "200": {
             "description": "Success",
@@ -128,7 +128,7 @@
     "/v1/connections": {
       "post": {
         "operationId": "createConnection",
-        "summary": "Create a pending connection and one-time authorization link",
+        "summary": "Create a connection using the configured authorization mode",
         "responses": {
           "201": {
             "description": "Success",
@@ -162,6 +162,9 @@
           },
           "500": {
             "$ref": "#/components/responses/Error500"
+          },
+          "502": {
+            "$ref": "#/components/responses/Error502"
           }
         },
         "requestBody": {
@@ -637,19 +640,36 @@
           "provider": {
             "type": "string",
             "enum": [
-              "sandbox"
+              "sandbox",
+              "efi"
             ]
           },
           "sandbox": {
             "type": "boolean",
-            "const": true
+            "description": "True for local simulated data or Efí homologation; false for Efí production."
+          },
+          "connection_mode": {
+            "type": "string",
+            "enum": [
+              "sandbox_consent",
+              "api_credentials"
+            ]
+          },
+          "data_coverage": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Explicit coverage of the adapter. Efí does not return a complete bank statement."
           }
         },
         "required": [
           "id",
           "name",
           "provider",
-          "sandbox"
+          "sandbox",
+          "connection_mode",
+          "data_coverage"
         ]
       },
       "Connection": {
@@ -667,7 +687,8 @@
           "provider": {
             "type": "string",
             "enum": [
-              "sandbox"
+              "sandbox",
+              "efi"
             ]
           },
           "status": {
@@ -686,11 +707,19 @@
           },
           "consent_expires_at": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "description": "Local collection deadline. For api_credentials this is not a consent registered at the bank."
           },
           "last_synced_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "authorization_mode": {
+            "type": "string",
+            "enum": [
+              "sandbox_consent",
+              "api_credentials"
+            ]
           }
         },
         "required": [
@@ -700,7 +729,8 @@
           "provider",
           "status",
           "created_at",
-          "consent_expires_at"
+          "consent_expires_at",
+          "authorization_mode"
         ]
       },
       "ConnectRequest": {
@@ -716,7 +746,8 @@
             "type": "string",
             "enum": [
               "sandbox-bank",
-              "sandbox-credit-union"
+              "sandbox-credit-union",
+              "efi"
             ]
           }
         },
@@ -734,7 +765,8 @@
           },
           "authorization_url": {
             "type": "string",
-            "format": "uri"
+            "format": "uri",
+            "description": "Present only for the local sandbox consent flow."
           },
           "authorization_expires_at": {
             "type": "string",
@@ -742,9 +774,7 @@
           }
         },
         "required": [
-          "connection",
-          "authorization_url",
-          "authorization_expires_at"
+          "connection"
         ]
       },
       "Money": {
@@ -785,7 +815,8 @@
             "type": "string",
             "enum": [
               "checking",
-              "savings"
+              "savings",
+              "payment"
             ]
           },
           "balance": {
@@ -871,7 +902,8 @@
               "provider_unavailable",
               "invalid_provider_data",
               "storage_unavailable",
-              "lease_exhausted"
+              "lease_exhausted",
+              "provider_credentials"
             ]
           },
           "created_at": {
@@ -1140,6 +1172,16 @@
             }
           }
         },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Error502": {
+        "description": "Provider credentials or scope are invalid, or the provider is unavailable.",
         "content": {
           "application/json": {
             "schema": {

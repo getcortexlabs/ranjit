@@ -15,11 +15,11 @@ type Source interface {
 
 ## Uma integração real exige mais que Fetch
 
-O único provedor registrado é `sandbox`. A configuração, a criação de conexões e o schema rejeitam outros provedores intencionalmente. A página `/sandbox/authorize` não deve ser reaproveitada como callback de um banco.
+A configuração seleciona `sandbox` ou `efi`. O [conector Efí](efi.md) implementa `CredentialSource`, que acrescenta `CredentialID()` e `Verify(ctx)` ao contrato de ingestão. Isso permite verificar o acesso instalado pelo titular e vincular cada conexão à aplicação correspondente. O conector cobre a própria conta, com leitura de saldo e recebimentos Pix. A página `/sandbox/authorize` não deve ser reaproveitada como callback de um banco.
 
-Um adaptador real precisa de uma mudança que implemente e teste o fluxo oferecido pela operação habilitada: início da autorização, vínculo entre usuário e consentimento, callback autenticado, troca e renovação de credenciais, expiração, revogação remota e os estados de falha. O conjunto exato depende da integração contratada.
+Um adaptador para compartilhamento pelo Open Finance precisa implementar e testar o fluxo oferecido pela operação habilitada: início da autorização, vínculo entre usuário e consentimento, callback autenticado, troca e renovação de credenciais, expiração, revogação remota e os estados de falha. O conjunto exato depende da integração contratada.
 
-Credenciais não têm armazenamento nesta versão. Ao introduzi-las, defina criptografia, referência de chave, rotação e política de remoção antes de persisti-las. O mesmo vale para revogação: a operação local já impede novas leituras e importações, mas a revogação remota precisará de execução persistente e retentativas próprias.
+O conector Efí lê segredos e certificados de arquivos locais protegidos e mantém tokens em memória. Não há armazenamento de credenciais no banco. Para introduzir credenciais por usuário ou renovação persistida, defina criptografia, referência de chave, rotação e política de remoção antes de persisti-las. O mesmo vale para revogação: a operação local já impede novas leituras e importações, mas a revogação remota precisará de execução persistente e retentativas próprias.
 
 Mantenha URLs remotas na configuração do operador, valide os destinos e use clientes HTTP com limites de resposta, timeouts e política explícita de redirects. Não transforme URLs enviadas por usuários em destinos de chamadas autenticadas.
 

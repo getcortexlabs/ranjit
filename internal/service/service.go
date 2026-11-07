@@ -33,18 +33,37 @@ func (s *Service) Connect(ctx context.Context, req ranjit.ConnectRequest) (ranji
 	if strings.TrimSpace(req.CustomerID) != req.CustomerID || req.CustomerID == "" || len(req.CustomerID) > 128 || strings.ContainsAny(req.CustomerID, "\x00\r\n") {
 		return ranjit.ConnectResponse{}, fmt.Errorf("%w: customer_id must contain 1 to 128 bytes without surrounding whitespace", ranjit.ErrInvalid)
 	}
-	found := false
+	var institution ranjit.Institution
 	for _, i := range s.Source.Institutions() {
-		if i.ID == req.InstitutionID && i.Sandbox && i.Provider == "sandbox" {
-			found = true
+		if i.ID == req.InstitutionID {
+			institution = i
+			break
 		}
 	}
-	if !found {
-		return ranjit.ConnectResponse{}, fmt.Errorf("%w: unknown sandbox institution", ranjit.ErrInvalid)
+	if institution.ID == "" {
+		return ranjit.ConnectResponse{}, fmt.Errorf("%w: unknown institution", ranjit.ErrInvalid)
+	}
+	if institution.ConnectionMode == "api_credentials" {
+		source, ok := s.Source.(provider.CredentialSource)
+		if !ok || source.CredentialID() == "" {
+			return ranjit.ConnectResponse{}, ranjit.ErrProviderCredentials
+		}
+		if err := source.Verify(ctx); err != nil {
+			return ranjit.ConnectResponse{}, err
+		}
+		now := s.Now().UTC().Truncate(time.Millisecond)
+		c := ranjit.Connection{ID: ranjit.NewID("con"), CustomerID: req.CustomerID, InstitutionID: institution.ID, Provider: institution.Provider, Status: "active", CreatedAt: now, ConsentExpiresAt: now.Add(ConsentTTL), AuthorizationMode: "api_credentials", CredentialID: source.CredentialID()}
+		if err := s.Store.CreateAuthorizedConnection(ctx, c); err != nil {
+			return ranjit.ConnectResponse{}, err
+		}
+		return ranjit.ConnectResponse{Connection: c}, nil
+	}
+	if institution.Provider != "sandbox" {
+		return ranjit.ConnectResponse{}, ranjit.ErrInvalid
 	}
 	now := s.Now().UTC().Truncate(time.Millisecond)
 	token := rand.Text()
-	c := ranjit.Connection{ID: ranjit.NewID("con"), CustomerID: req.CustomerID, InstitutionID: req.InstitutionID, Provider: "sandbox", Status: "pending", CreatedAt: now, ConsentExpiresAt: now.Add(ConsentTTL)}
+	c := ranjit.Connection{ID: ranjit.NewID("con"), CustomerID: req.CustomerID, InstitutionID: req.InstitutionID, Provider: "sandbox", Status: "pending", CreatedAt: now, ConsentExpiresAt: now.Add(ConsentTTL), AuthorizationMode: "sandbox_consent"}
 	deadline := now.Add(AuthorizationTTL)
 	if err := s.Store.CreateConnection(ctx, c, tokenHash(token), deadline); err != nil {
 		return ranjit.ConnectResponse{}, err

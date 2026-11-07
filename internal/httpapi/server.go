@@ -159,6 +159,10 @@ func (h *Server) problem(w http.ResponseWriter, err error) {
 		status, code, message = http.StatusConflict, "inactive_connection", ranjit.ErrConflict.Error()
 	case errors.Is(err, ranjit.ErrInvalid):
 		status, code, message = http.StatusBadRequest, "invalid_request", err.Error()
+	case errors.Is(err, ranjit.ErrProviderCredentials):
+		status, code, message = http.StatusBadGateway, "provider_credentials", ranjit.ErrProviderCredentials.Error()
+	case errors.Is(err, ranjit.ErrProviderUnavailable):
+		status, code, message = http.StatusBadGateway, "provider_unavailable", ranjit.ErrProviderUnavailable.Error()
 	default:
 		h.logger.Error("request failed", "request_id", w.Header().Get("X-Request-ID"))
 	}

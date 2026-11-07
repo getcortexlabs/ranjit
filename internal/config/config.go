@@ -5,8 +5,11 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/getcortexlabs/ranjit/internal/provider/efi"
 )
 
 type Config struct {
@@ -15,6 +18,8 @@ type Config struct {
 	APIKey       string
 	Database     string
 	SyncInterval time.Duration
+	Provider     string
+	EFI          efi.Config
 }
 
 func Load() (Config, error) {
@@ -22,8 +27,22 @@ func Load() (Config, error) {
 	if len(c.APIKey) < 32 || strings.ContainsAny(c.APIKey, " \t\r\n") {
 		return c, fmt.Errorf("RANJIT_API_KEY must contain at least 32 bytes without whitespace; run 'ranjit init' to generate one")
 	}
-	if env("RANJIT_PROVIDER", "sandbox") != "sandbox" {
-		return c, fmt.Errorf("RANJIT_PROVIDER: this version supports only sandbox")
+	c.Provider = env("RANJIT_PROVIDER", "sandbox")
+	if c.Provider != "sandbox" && c.Provider != "efi" {
+		return c, fmt.Errorf("RANJIT_PROVIDER must be sandbox or efi")
+	}
+	if c.Provider == "efi" {
+		days, err := strconv.Atoi(env("RANJIT_EFI_LOOKBACK_DAYS", "90"))
+		if err != nil || days < 1 || days > 90 {
+			return c, fmt.Errorf("RANJIT_EFI_LOOKBACK_DAYS must be between 1 and 90")
+		}
+		c.EFI = efi.Config{Environment: env("RANJIT_EFI_ENV", "homologation"), ClientID: os.Getenv("RANJIT_EFI_CLIENT_ID"), ClientSecretFile: os.Getenv("RANJIT_EFI_CLIENT_SECRET_FILE"), CertificateFile: os.Getenv("RANJIT_EFI_CERT_FILE"), PrivateKeyFile: os.Getenv("RANJIT_EFI_KEY_FILE"), LookbackDays: days}
+		if c.EFI.Environment != "homologation" && c.EFI.Environment != "production" {
+			return c, fmt.Errorf("RANJIT_EFI_ENV must be homologation or production")
+		}
+		if c.EFI.ClientID == "" || c.EFI.ClientSecretFile == "" || c.EFI.CertificateFile == "" || c.EFI.PrivateKeyFile == "" {
+			return c, fmt.Errorf("Efí requires RANJIT_EFI_CLIENT_ID, RANJIT_EFI_CLIENT_SECRET_FILE, RANJIT_EFI_CERT_FILE and RANJIT_EFI_KEY_FILE")
+		}
 	}
 	if _, _, err := net.SplitHostPort(c.Addr); err != nil {
 		return c, fmt.Errorf("RANJIT_ADDR must use host:port")

@@ -8,11 +8,17 @@ Use `Authorization: Bearer <chave>` em todas as rotas `/v1`. A instalação repr
 
 `GET /healthz` e `GET /readyz` não exigem autenticação. O primeiro verifica que o processo responde; o segundo também consulta o banco.
 
+## Conexão direta Efí
+
+Com `RANJIT_PROVIDER=efi`, envie `institution_id: efi`. A criação verifica a aplicação configurada localmente, cria a conexão ativa e enfileira a primeira sincronização. A resposta traz apenas `connection`; não há URL de consentimento. `authorization_mode: api_credentials` identifica esse fluxo. O campo `consent_expires_at` representa o limite local de coleta de 90 dias, independente da validade bancária.
+
+`GET /v1/institutions` informa `connection_mode`, `sandbox` e `data_coverage`. Para Efí, o histórico cobre recebimentos Pix e suas devoluções concluídas; não representa o extrato completo. Consulte o [guia do conector](efi.md).
+
 ## Consentimento simulado
 
 `POST /v1/connections` recebe `customer_id` e `institution_id`. O primeiro é o ID interno da aplicação, com até 128 bytes. Use um identificador opaco. O segundo deve vir de `GET /v1/institutions`.
 
-A resposta 201 contém `connection`, `authorization_url` e `authorization_expires_at`. O link é uma credencial temporária. Apenas a aplicação que criou a conexão e a pessoa autorizando devem recebê-lo. A criação não é idempotente: não repita automaticamente um POST cujo resultado ficou incerto; consulte as conexões do cliente antes de tentar novamente.
+No sandbox, a resposta 201 contém `connection`, `authorization_url` e `authorization_expires_at`. O link é uma credencial temporária. Apenas a aplicação que criou a conexão e a pessoa autorizando devem recebê-lo. A criação não é idempotente: não repita automaticamente um POST cujo resultado ficou incerto; consulte as conexões do cliente antes de tentar novamente.
 
 `GET /sandbox/authorize?token=...` exibe a decisão. `POST /sandbox/authorize` recebe `token` e `decision=approve|deny` como `application/x-www-form-urlencoded`. O token dispensa a chave da API apenas nessa rota. Uma decisão bem-sucedida retorna a conexão em JSON. Reutilizar ou deixar vencer o link resulta em 410.
 
@@ -30,7 +36,7 @@ Não há renovação de consentimento nesta versão. Crie outra conexão. Uma co
 
 `POST /v1/connections/{id}/sync` retorna 202 com o job e seu endereço no cabeçalho `Location`. Se já existe execução pendente ou em andamento, retorna o mesmo job. Acompanhe `GET /v1/jobs/{id}`.
 
-Os estados são `queued`, `running`, `succeeded`, `failed` e `cancelled`. `attempts` conta reivindicações da execução, incluindo retomadas após queda. `error_code` pode ser `provider_unavailable`, `invalid_provider_data`, `storage_unavailable` ou `lease_exhausted`. Não contém mensagens brutas do provedor.
+Os estados são `queued`, `running`, `succeeded`, `failed` e `cancelled`. `attempts` conta reivindicações da execução, incluindo retomadas após queda. `error_code` pode ser `provider_unavailable`, `invalid_provider_data`, `storage_unavailable`, `lease_exhausted` ou `provider_credentials`. Não contém mensagens brutas do provedor.
 
 O agendador verifica conexões periodicamente. O intervalo padrão é uma hora desde a última atualização de um job terminal. Pedidos explícitos podem antecipar a próxima sincronização.
 
@@ -53,7 +59,7 @@ Isso representa um débito de R$ 45,90. Não use `float` para armazenar esse val
 
 ## Revogação
 
-`DELETE /v1/connections/{id}` retorna 204 depois de revogar localmente, invalidar o link, cancelar jobs ativos e apagar contas e transações. Repetir para uma conexão já revogada também retorna 204. O registro da conexão e os jobs permanecem para consulta.
+`DELETE /v1/connections/{id}` retorna 204 depois de revogar localmente, invalidar o link, cancelar jobs ativos e apagar contas e transações. Repetir para uma conexão já revogada também retorna 204. O registro da conexão e os jobs permanecem para consulta. Para Efí, revogar a credencial no banco exige desabilitar a aplicação na Efí; o DELETE encerra somente o acesso local.
 
 Leituras de contas de uma conexão inativa retornam 409. Uma conta já apagada retorna 404 ao consultar suas transações. Expiração também bloqueia acesso imediatamente; a limpeza física de linhas ocorre no próximo passo do worker.
 
@@ -76,6 +82,8 @@ Leituras de contas de uma conexão inativa retornam 409. Uma conta já apagada r
 | 404 | `not_found` | Recurso inexistente |
 | 409 | `inactive_connection` | Conexão sem consentimento ativo |
 | 410 | `invalid_authorization` | Token inválido, consumido ou vencido |
+| 502 | `provider_credentials` | Credenciais, escopos ou vínculo da aplicação inválidos |
+| 502 | `provider_unavailable` | Banco temporariamente indisponível |
 | 500 | `internal_error` | Falha interna |
 
 O corpo de entrada é limitado a 16 KiB; JSON com campos desconhecidos ou conteúdo adicional é rejeitado com 400. Respostas de erro geradas pelo roteador HTTP, como método não permitido, podem ser texto simples. `X-Request-ID` permite localizar a chamada nos logs sem incluir dados financeiros.

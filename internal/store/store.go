@@ -55,8 +55,22 @@ func Open(ctx context.Context, path string) (*Store, error) {
 func (s *Store) Close() error                   { return s.db.Close() }
 func (s *Store) Ping(ctx context.Context) error { return s.db.PingContext(ctx) }
 
-func (s *Store) migrate(ctx context.Context) error {
-	tx, err := s.db.BeginTx(ctx, nil)
+func (s *Store) migrate(ctx context.Context) (resultErr error) {
+	// Table rebuilds must not cascade-delete children. Pin this connection until
+	// constraints are checked and enforcement is restored, including on failure.
+	conn, err := s.db.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	if _, err = conn.ExecContext(ctx, `PRAGMA foreign_keys = OFF`); err != nil {
+		return err
+	}
+	defer func() {
+		_, err := conn.ExecContext(context.Background(), `PRAGMA foreign_keys = ON`)
+		resultErr = errors.Join(resultErr, err)
+	}()
+	tx, err := conn.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -88,18 +102,31 @@ func (s *Store) migrate(ctx context.Context) error {
 			return err
 		}
 	}
+	rows, err := tx.QueryContext(ctx, `PRAGMA foreign_key_check`)
+	if err != nil {
+		return err
+	}
+	broken := rows.Next()
+	checkErr := rows.Err()
+	rows.Close()
+	if checkErr != nil {
+		return checkErr
+	}
+	if broken {
+		return errors.New("migration violates foreign key constraints")
+	}
 	return tx.Commit()
 }
 
 type scanner interface{ Scan(...any) error }
 
-const connectionColumns = `id, customer_id, institution_id, provider, status, created_at, consent_expires_at, last_synced_at`
+const connectionColumns = `id, customer_id, institution_id, provider, status, created_at, consent_expires_at, last_synced_at, authorization_mode, credential_id`
 
 func scanConnection(row scanner) (ranjit.Connection, error) {
 	var c ranjit.Connection
 	var created, expires int64
 	var synced sql.NullInt64
-	err := row.Scan(&c.ID, &c.CustomerID, &c.InstitutionID, &c.Provider, &c.Status, &created, &expires, &synced)
+	err := row.Scan(&c.ID, &c.CustomerID, &c.InstitutionID, &c.Provider, &c.Status, &created, &expires, &synced, &c.AuthorizationMode, &c.CredentialID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return c, ranjit.ErrNotFound
 	}

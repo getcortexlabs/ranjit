@@ -16,6 +16,14 @@ type Source interface {
 	Fetch(context.Context, ranjit.Connection) (Snapshot, error)
 }
 
+// CredentialSource accesses the operator's own account using credentials installed locally.
+// CredentialID binds connections to an application and environment without persisting secrets.
+type CredentialSource interface {
+	Source
+	CredentialID() string
+	Verify(context.Context) error
+}
+
 type Account struct {
 	ExternalID string
 	Name       string
@@ -41,7 +49,7 @@ type Snapshot struct {
 func (s Snapshot) Validate() error {
 	accounts := make(map[string]bool, len(s.Accounts))
 	for _, a := range s.Accounts {
-		if !validID(a.ExternalID) || accounts[a.ExternalID] || strings.TrimSpace(a.Name) == "" || len(a.Name) > 256 || a.Type != "checking" && a.Type != "savings" {
+		if !validID(a.ExternalID) || accounts[a.ExternalID] || strings.TrimSpace(a.Name) == "" || len(a.Name) > 256 || a.Type != "checking" && a.Type != "savings" && a.Type != "payment" {
 			return fmt.Errorf("%w: malformed account", ranjit.ErrInvalid)
 		}
 		if err := a.Balance.Validate(); err != nil {

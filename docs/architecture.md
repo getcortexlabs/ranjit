@@ -18,6 +18,7 @@ aplicação → API HTTP → serviço / armazenamento → SQLite
 | `internal/store` | Migrações, consultas e transações de consistência |
 | `internal/provider` | Contrato de ingestão e validação do lote |
 | `internal/provider/sandbox` | Instituições e dados fictícios reproduzíveis |
+| `internal/provider/efi` | Consulta direta de saldo, recebimentos Pix e devoluções na Efí |
 | `internal/worker` | Agendamento, tentativas e execução da sincronização |
 
 As consultas simples vão do handler ao armazenamento. O fluxo de consentimento passa pelo serviço. Não existe uma interface de repositório que apenas repete os métodos de um único banco. A interface de provedor existe porque essa é uma fronteira concreta de integração.
@@ -30,6 +31,10 @@ A decisão é um UPDATE condicional ao estado, ao token e aos prazos. A aprovaç
 
 Os prazos de dez minutos e 90 dias pertencem ao sandbox. Não são configurações de OAuth nem afirmações sobre um consentimento oficial.
 
+No modo `api_credentials`, a criação verifica a aplicação bancária instalada pelo operador e grava a conexão ativa junto do primeiro job. Não passa pelo formulário de sandbox. O prazo local de 90 dias também limita essa coleta e fica no campo existente `consent_expires_at`; a validade bancária das credenciais é independente. `authorization_mode` distingue os dois fluxos.
+
+O hash do Client ID e do ambiente vincula a conexão à aplicação Efí. O conector rejeita outro vínculo antes de fazer chamadas bancárias. Secret, chave privada e certificado são lidos de arquivos locais; tokens OAuth ficam em memória. Revogar no Ranjit encerra o acesso local; desabilitar a aplicação no banco é uma operação separada.
+
 ## Sincronização
 
 Um índice parcial permite no máximo um job `queued` ou `running` por conexão. Pedidos simultâneos de sincronização devolvem esse mesmo job. Criar conexões não é idempotente: uma repetição do POST cria outra conexão.
@@ -38,7 +43,7 @@ O worker verifica vencimentos, agenda conexões elegíveis e reivindica um job a
 
 Antes de importar, o armazenamento valida o lote e verifica novamente estado do consentimento, prazo e token de execução. Contas, transações, conclusão do job e data da última sincronização são gravados na mesma transação. Uma falha em qualquer escrita desfaz todas elas.
 
-Falhas transitórias usam esperas de 2, 4, 8 e 16 segundos entre até cinco tentativas. Dados inválidos encerram o job imediatamente. Um job terminal só volta a ser elegível pelo agendador depois do intervalo de sincronização, ou por um novo pedido explícito. Não há retry automático da criação de conexões no SDK.
+Falhas transitórias usam esperas de 2, 4, 8 e 16 segundos entre até cinco tentativas. Dados inválidos ou falhas de credenciais encerram o job imediatamente. Um job terminal só volta a ser elegível pelo agendador depois do intervalo de sincronização, ou por um novo pedido explícito. Não há retry automático da criação de conexões no SDK.
 
 ## Dados
 
@@ -52,6 +57,6 @@ Saldos são informados pelo provedor. Não são recalculados a partir do histór
 
 O driver abre uma única conexão SQL, habilita chaves estrangeiras, WAL, `synchronous=FULL` e espera de cinco segundos por locks. Transações usam lock imediato. Isso simplifica a disputa por jobs e a ordenação entre revogar e importar, mas serializa consultas e escritas. Não é uma arquitetura de réplicas horizontais.
 
-Migrações SQL ficam embutidas no binário e são registradas por nome. Novas mudanças de schema devem ganhar outro arquivo; migrações aplicadas não devem ser editadas. O início aplica as pendentes em uma transação.
+Migrações SQL ficam embutidas no binário e são registradas por nome. Novas mudanças de schema devem ganhar outro arquivo; migrações aplicadas não devem ser editadas. O início aplica as pendentes em uma transação. Reconstruções de tabela usam uma conexão SQL reservada, suspendem a execução das chaves estrangeiras durante a migração, verificam a integridade antes do commit e restauram sua execução antes de liberar a conexão. O teste de upgrade verifica que contas, transações e jobs existentes são preservados.
 
 A retenção atual mantém metadados das conexões e o histórico dos jobs. A remoção dos dados financeiros ocorre ao revogar ou após o worker identificar um consentimento vencido. DELETE lógico de linhas não garante eliminação de vestígios no arquivo, WAL ou backups; essa política precisa acompanhar a operação de armazenamento.

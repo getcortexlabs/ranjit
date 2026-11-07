@@ -11,29 +11,35 @@ import (
 )
 
 var (
-	ErrNotFound = errors.New("not found")
-	ErrConflict = errors.New("connection is not active")
-	ErrInvalid  = errors.New("invalid input")
-	ErrConsent  = errors.New("authorization link is invalid, expired or already used")
-	ErrLease    = errors.New("job lease is no longer valid")
+	ErrNotFound            = errors.New("not found")
+	ErrConflict            = errors.New("connection is not active")
+	ErrInvalid             = errors.New("invalid input")
+	ErrConsent             = errors.New("authorization link is invalid, expired or already used")
+	ErrLease               = errors.New("job lease is no longer valid")
+	ErrProviderCredentials = errors.New("provider credentials are invalid, missing required scopes or have changed")
+	ErrProviderUnavailable = errors.New("provider is unavailable")
 )
 
 type Institution struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Provider string `json:"provider"`
-	Sandbox  bool   `json:"sandbox"`
+	ID             string   `json:"id"`
+	Name           string   `json:"name"`
+	Provider       string   `json:"provider"`
+	Sandbox        bool     `json:"sandbox"`
+	ConnectionMode string   `json:"connection_mode"`
+	DataCoverage   []string `json:"data_coverage"`
 }
 
 type Connection struct {
-	ID               string     `json:"id"`
-	CustomerID       string     `json:"customer_id"`
-	InstitutionID    string     `json:"institution_id"`
-	Provider         string     `json:"provider"`
-	Status           string     `json:"status"`
-	CreatedAt        time.Time  `json:"created_at"`
-	ConsentExpiresAt time.Time  `json:"consent_expires_at"`
-	LastSyncedAt     *time.Time `json:"last_synced_at,omitempty"`
+	ID                string     `json:"id"`
+	CustomerID        string     `json:"customer_id"`
+	InstitutionID     string     `json:"institution_id"`
+	Provider          string     `json:"provider"`
+	Status            string     `json:"status"`
+	CreatedAt         time.Time  `json:"created_at"`
+	ConsentExpiresAt  time.Time  `json:"consent_expires_at"`
+	LastSyncedAt      *time.Time `json:"last_synced_at,omitempty"`
+	AuthorizationMode string     `json:"authorization_mode"`
+	CredentialID      string     `json:"-"`
 }
 
 type ConnectRequest struct {
@@ -43,8 +49,8 @@ type ConnectRequest struct {
 
 type ConnectResponse struct {
 	Connection             Connection `json:"connection"`
-	AuthorizationURL       string     `json:"authorization_url"`
-	AuthorizationExpiresAt time.Time  `json:"authorization_expires_at"`
+	AuthorizationURL       string     `json:"authorization_url,omitempty"`
+	AuthorizationExpiresAt time.Time  `json:"authorization_expires_at,omitzero"`
 }
 
 // Money uses signed minor units. BRL 12.34 is 1234; debits are negative.

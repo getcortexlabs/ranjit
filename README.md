@@ -2,9 +2,9 @@
 
 Uma API em Go para conectar contas, acompanhar consentimentos e consultar dados financeiros no mesmo formato.
 
-O Ranjit cuida da integração dentro da aplicação: estado da conexão, fila de sincronização, contas, saldos e transações. A primeira versão roda com um sandbox local. Dá para percorrer o fluxo inteiro sem cadastrar empresa, contratar serviço ou informar senha de banco.
+O Ranjit cuida da integração dentro da aplicação: estado da conexão, fila de sincronização, contas, saldos e transações. Inclui um sandbox local e um conector direto para a própria conta Efí, com saldo, Pix recebidos e devoluções concluídas desses recebimentos.
 
-Para dados reais, a operação precisa ter acesso habilitado ao Open Finance e um adaptador para a integração contratada. Esse adaptador ainda não está implementado. O código não concede acesso às APIs de Nubank, Itaú, Inter ou de qualquer outro banco. Os [limites de acesso](docs/open-finance.md) estão documentados com as referências oficiais.
+A integração Efí usa as credenciais da aplicação criada pelo titular no banco. Para compartilhamento entre bancos pelo Open Finance, ainda é necessária uma operação habilitada e outro adaptador. Os [limites de acesso](docs/open-finance.md) estão documentados com as referências oficiais.
 
 ## Rodar
 
@@ -39,6 +39,12 @@ docker compose up --build
 
 A imagem roda sem root. O Compose publica a porta apenas em loopback e guarda o SQLite no volume `ranjit_data`. Não rode `make run` e Compose na mesma porta ao mesmo tempo. Quem preferir preparar a configuração sem Go pode copiar `.env.example` para `.env` e preencher `RANJIT_API_KEY` com a saída de `openssl rand -hex 32`.
 
+## Conectar a própria conta Efí
+
+O [guia Efí](docs/efi.md) mostra como configurar Client ID, Client Secret e certificado para homologação ou produção. A modalidade Pro admite empreendedores sem CNPJ. O conector usa apenas leitura, e cada instalação mantém suas credenciais localmente.
+
+O histórico inicial cobre Pix recebidos e suas devoluções concluídas. Compras, Pix enviados e o extrato completo não estão incluídos. O conector foi testado com respostas simuladas da API; a validação com uma conta habilitada ainda está pendente.
+
 ## Integrar
 
 Toda chamada em `/v1` usa `Authorization: Bearer <RANJIT_API_KEY>`. Essa chave pertence ao backend da aplicação. Ela permite acessar todos os clientes daquela instalação; `customer_id` é um identificador de agrupamento, não uma barreira de autorização entre usuários.
@@ -54,14 +60,14 @@ curl http://localhost:8080/v1/connections \
   -d '{"customer_id":"user-42","institution_id":"sandbox-bank"}'
 ```
 
-A resposta traz a conexão e `authorization_url`. O link vence em dez minutos e só pode ser usado uma vez. A aprovação enfileira a primeira sincronização. O consentimento simulado dura 90 dias, contados da criação da conexão; esse prazo não pretende reproduzir a regra de um banco.
+No sandbox, a resposta traz a conexão e `authorization_url`. O link vence em dez minutos e só pode ser usado uma vez. A aprovação enfileira a primeira sincronização. O consentimento simulado dura 90 dias, contados da criação da conexão; esse prazo não pretende reproduzir a regra de um banco. Para Efí, a conexão usa `api_credentials`, é criada ativa após verificar o acesso e não retorna link de autorização.
 
 O [exemplo Go](examples/connect/main.go) mostra o fluxo completo. O contrato HTTP está em [docs/openapi.json](docs/openapi.json), e os detalhes de paginação, erros e estados em [docs/api.md](docs/api.md).
 
 | Método | Caminho | Uso |
 | --- | --- | --- |
-| `GET` | `/v1/institutions` | Instituições disponíveis no sandbox |
-| `POST` | `/v1/connections` | Criar conexão e link de autorização |
+| `GET` | `/v1/institutions` | Instituições configuradas e cobertura de dados |
+| `POST` | `/v1/connections` | Criar conexão; link de autorização no sandbox |
 | `GET` | `/v1/connections?customer_id=...` | Listar conexões do cliente |
 | `GET` | `/v1/connections/{id}` | Consultar estado e última sincronização |
 | `POST` | `/v1/connections/{id}/sync` | Enfileirar sincronização |
@@ -89,6 +95,6 @@ make build     # bin/ranjit, sem CGO
 
 Os testes usam SQLite em diretórios temporários e exercitam os handlers HTTP reais com transporte em memória. Cobrem consentimento, autenticação, paginação, isolamento dos IDs entre conexões, rollback, repetição de sincronização, concorrência, expiração e retomada após reinício.
 
-Antes de operar fora da máquina local, leia [operação](docs/operations.md). A versão atual tem uma chave por instalação, banco sem criptografia em repouso e apenas o provedor simulado. Webhooks, credenciais de provedores reais, múltiplos operadores e PostgreSQL ficam para mudanças com casos de uso definidos.
+Antes de operar fora da máquina local, leia [operação](docs/operations.md). A versão atual tem uma chave por instalação e banco sem criptografia em repouso. A configuração escolhe um provedor por processo: sandbox ou uma aplicação Efí. Webhooks, múltiplos operadores, extratos completos e PostgreSQL ficam para mudanças com casos de uso definidos.
 
 Contribuições: [CONTRIBUTING.md](CONTRIBUTING.md). Licença: [MIT](LICENSE).

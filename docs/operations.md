@@ -1,6 +1,6 @@
 # Operação
 
-Esta versão é um servidor de sandbox. O deploy não habilita dados reais nem acrescenta um conector bancário.
+O servidor pode usar o sandbox local ou o conector direto Efí. Configure as credenciais da própria conta seguindo o [guia Efí](efi.md); o deploy sozinho não habilita acesso bancário.
 
 ## Configuração
 
@@ -10,7 +10,7 @@ Esta versão é um servidor de sandbox. O deploy não habilita dados reais nem a
 | `RANJIT_ADDR` | `127.0.0.1:8080` | Endereço de escuta HTTP |
 | `RANJIT_BASE_URL` | `http://localhost:8080` | Origem pública dos links de consentimento |
 | `RANJIT_DATABASE` | `./data/ranjit.db` | Caminho do arquivo SQLite |
-| `RANJIT_PROVIDER` | `sandbox` | Único provedor implementado |
+| `RANJIT_PROVIDER` | `sandbox` | `sandbox` ou `efi` |
 | `RANJIT_SYNC_INTERVAL` | `1h` | Intervalo do agendador; mínimo `1m` |
 
 O binário lê variáveis de ambiente. Quem carrega `.env` é o Makefile ou o Compose. Ao executar `bin/ranjit` diretamente, exporte as variáveis antes. `ranjit init` cria o arquivo sem sobrescrever outro existente; `ranjit version` imprime a versão; `ranjit healthcheck` verifica `/readyz` no endereço local.
@@ -39,4 +39,6 @@ Para trocar a chave da API, atualize a variável e reinicie o processo. Atualize
 
 ## Verificação
 
-`make check` valida código e comportamento sem exigir portas de rede. `make smoke` precisa de uma instância rodando e testa o caminho HTTP por socket. O workflow de CI executa ambos e faz uma verificação de vulnerabilidades. A imagem Docker é construída e exercitada em um job separado.
+`make check` valida código e comportamento sem exigir portas de rede. `make smoke` precisa de uma instância com o provedor `sandbox` rodando e testa o caminho HTTP por socket. O workflow de CI executa ambos e faz uma verificação de vulnerabilidades. A imagem Docker é construída e exercitada em um job separado.
+
+Os testes do conector Efí usam respostas bancárias simuladas. A validação contra uma conta habilitada é uma etapa separada. Ao mudar de provedor ou ambiente, use outro arquivo de banco para manter os dados separados.

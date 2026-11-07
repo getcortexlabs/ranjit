@@ -9,3 +9,8 @@
 *.db-wal
 *.sqlite
 .DS_Store
+/secrets/
+*.pem
+*.key
+*.p12
+*.pfx

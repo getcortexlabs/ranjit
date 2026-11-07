@@ -15,6 +15,8 @@ import (
 
 	"github.com/getcortexlabs/ranjit/internal/config"
 	"github.com/getcortexlabs/ranjit/internal/httpapi"
+	"github.com/getcortexlabs/ranjit/internal/provider"
+	"github.com/getcortexlabs/ranjit/internal/provider/efi"
 	"github.com/getcortexlabs/ranjit/internal/provider/sandbox"
 	"github.com/getcortexlabs/ranjit/internal/service"
 	"github.com/getcortexlabs/ranjit/internal/store"
@@ -59,7 +61,15 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 	defer db.Close()
-	source := sandbox.Source{}
+	var source provider.Source = sandbox.Source{}
+	if cfg.Provider == "efi" {
+		bank, err := efi.New(cfg.EFI)
+		if err != nil {
+			return err
+		}
+		defer bank.Close()
+		source = bank
+	}
 	svc := service.New(db, source, cfg.BaseURL)
 	server := &http.Server{Addr: cfg.Addr, Handler: httpapi.New(svc, cfg.APIKey, logger), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	listener, err := net.Listen("tcp", cfg.Addr)
@@ -72,7 +82,7 @@ func run(logger *slog.Logger) error {
 	go func() { defer close(workerDone); worker.New(db, source, cfg.SyncInterval, logger).Run(workerCtx) }()
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- server.Serve(listener) }()
-	logger.Info("ranjit started", "version", version, "addr", cfg.Addr, "provider", "sandbox")
+	logger.Info("ranjit started", "version", version, "addr", cfg.Addr, "provider", cfg.Provider)
 	select {
 	case <-ctx.Done():
 	case err = <-serveErr:

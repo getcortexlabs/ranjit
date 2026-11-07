@@ -1,6 +1,6 @@
 # Segurança
 
-O projeto está em desenvolvimento e o provedor atual usa apenas dados fictícios. Falhas de autenticação, vazamento de tokens e acesso depois de revogação ainda devem ser tratados como problemas de segurança.
+O projeto está em desenvolvimento. O sandbox usa dados fictícios e o conector Efí pode consultar dados reais quando configurado com credenciais de produção. Falhas de autenticação, vazamento de tokens e acesso depois de revogação devem ser tratados como problemas de segurança.
 
 Use o [relato privado de vulnerabilidade do GitHub](https://github.com/getcortexlabs/ranjit/security/advisories/new), quando habilitado. Se esse canal estiver indisponível, abra uma issue pedindo um contato privado, sem publicar detalhes de exploração ou dados sensíveis.
 
