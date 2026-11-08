@@ -315,3 +315,28 @@ func TestWebhookFailureEventsAndOutboxRollback(t *testing.T) {
 		}
 	})
 }
+
+func TestWebhookRetentionWhileDeliveryDisabled(t *testing.T) {
+	backendStores(t, func(t *testing.T, s *Store, _ string) {
+		s.EnableWebhooks("https://backend.example/events")
+		c := directGrant()
+		if err := s.CreateAuthorizedConnection(t.Context(), c); err != nil {
+			t.Fatal(err)
+		}
+		j, err := s.Claim(t.Context(), testNow, time.Minute)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = s.Fail(t.Context(), j, "provider_credentials", testNow); err != nil {
+			t.Fatal(err)
+		}
+		s.EnableWebhooks("")
+		if err = s.Expire(t.Context(), testNow.Add(WebhookRetention+time.Second)); err != nil {
+			t.Fatal(err)
+		}
+		var count int
+		if err = s.db.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM webhook_deliveries`).Scan(&count); err != nil || count != 0 {
+			t.Fatal("delivery metadata retained", count, err)
+		}
+	})
+}

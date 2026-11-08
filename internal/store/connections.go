@@ -145,6 +145,10 @@ func (s *Store) Expire(ctx context.Context, now time.Time) error {
 	if _, err = tx.ExecContext(ctx, `DELETE FROM connection_requests WHERE expires_at<=?`, now.UnixMilli()); err != nil {
 		return err
 	}
+	// Retention still applies when delivery is disabled in the current configuration.
+	if _, err = tx.ExecContext(ctx, `DELETE FROM webhook_deliveries WHERE updated_at<?`, now.Add(-WebhookRetention).UnixMilli()); err != nil {
+		return err
+	}
 	if _, err = tx.ExecContext(ctx, `UPDATE connections SET status = 'expired', token_hash = NULL
 		WHERE (provider <> 'file' AND status = 'active' AND consent_expires_at <= ?) OR (status = 'pending' AND authorization_expires_at <= ?)`, now.UnixMilli(), now.UnixMilli()); err != nil {
 		return err
