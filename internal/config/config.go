@@ -19,18 +19,23 @@ import (
 )
 
 type Config struct {
-	Profiles     []Profile
-	Addr         string
-	BaseURL      string
-	APIKey       string
-	Database     string
-	SyncInterval time.Duration
-	Provider     string
-	EFI          efi.Config
-	Inter        inter.Config
-	Sicoob       sicoob.Config
-	Santander    santander.Config
-	C6           c6.Config
+	PreviousAPIKey          string
+	PreviousAPIKeyExpiresAt time.Time
+	PersonalFile            string
+	WebhookURL              string
+	WebhookSecret           string
+	Profiles                []Profile
+	Addr                    string
+	BaseURL                 string
+	APIKey                  string
+	Database                string
+	SyncInterval            time.Duration
+	Provider                string
+	EFI                     efi.Config
+	Inter                   inter.Config
+	Sicoob                  sicoob.Config
+	Santander               santander.Config
+	C6                      c6.Config
 }
 
 func Load() (Config, error) {
@@ -67,6 +72,21 @@ func Load() (Config, error) {
 		c.Database = serverURL
 	} else if strings.Contains(c.Database, "://") {
 		return c, fmt.Errorf("use RANJIT_DATABASE_URL for PostgreSQL; RANJIT_DATABASE is a SQLite file path")
+	}
+	c.PreviousAPIKey = os.Getenv("RANJIT_API_KEY_PREVIOUS")
+	if value := os.Getenv("RANJIT_API_KEY_PREVIOUS_EXPIRES_AT"); value != "" {
+		var err error
+		c.PreviousAPIKeyExpiresAt, err = time.Parse(time.RFC3339, value)
+		if err != nil {
+			return c, fmt.Errorf("RANJIT_API_KEY_PREVIOUS_EXPIRES_AT must use RFC3339")
+		}
+	}
+	if err := validatePrevious(c.APIKey, c.PreviousAPIKey, c.PreviousAPIKeyExpiresAt); err != nil {
+		return c, err
+	}
+	c.WebhookURL, c.WebhookSecret = os.Getenv("RANJIT_WEBHOOK_URL"), os.Getenv("RANJIT_WEBHOOK_SECRET")
+	if err := validateWebhook(c.WebhookURL, c.WebhookSecret); err != nil {
+		return c, err
 	}
 	c.Provider = env("RANJIT_PROVIDER", "sandbox")
 	if hasProfiles {

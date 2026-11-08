@@ -43,6 +43,7 @@ Outros comandos:
   ranjit validate perfil                Testar acesso e gerar relatório local
   ranjit revoke ID                       Revogar conexão e apagar seus dados
   ranjit key                            Mostrar chave da API local
+  ranjit key rotate --grace 24h          Trocar chave com prazo para migração
   ranjit version                        Mostrar versão
   ranjit init                           Gerar .env para o fluxo com Make/Docker
 
@@ -80,7 +81,12 @@ func (c cli) command(ctx context.Context, args []string) error {
 		return c.doctor(ctx, args[1:])
 	case "import":
 		return c.importFile(ctx, args[1:])
-	case "status", "accounts", "transactions", "key", "revoke":
+	case "key":
+		if len(args) > 1 && args[1] == "rotate" {
+			return c.rotateKey(args[2:])
+		}
+		return c.inspect(ctx, "key", args[1:])
+	case "status", "accounts", "transactions", "revoke":
 		return c.inspect(ctx, args[0], args[1:])
 	case "sync", "demo":
 		return c.sync(ctx, args[0], args[1:])

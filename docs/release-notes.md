@@ -1,13 +1,13 @@
-Ranjit como serviço para seu backend, com SDK Go e PostgreSQL.
+Integrações de backend com recuperação de pedidos, notificações assinadas e troca de chaves.
 
-- PostgreSQL para hospedagem, mantendo SQLite como padrão local.
-- Configuração de vários perfis por `RANJIT_PROFILES_JSON` e credenciais por referências `env:NOME` aos segredos da plataforma.
-- `ranjit.NewClientFromEnv()` e um exemplo de backend com importação e consulta de transações.
-- Guia de instalação em servidor e receita preparada para o catálogo do Orbit.
-- Testes com PostgreSQL real para concorrência, reinício, rollback, deduplicação e revogação; integração do SDK verificada contra o servidor em execução.
+- `Idempotency-Key` e `client.ConnectWithKey`: pedidos repetidos recuperam a mesma conexão por 24 horas, inclusive depois de reiniciar.
+- Webhooks `sync.succeeded` e `sync.failed` com HMAC-SHA256, fila persistente, oito tentativas automáticas e reenvio pela API/SDK.
+- Rotação da chave com sobreposição: `ranjit key rotate --grace 24h` na configuração pessoal; chave anterior e expiração por ambiente em servidores.
+- Receptor Go com verificação de assinatura e caixa de entrada SQLite que deduplica eventos.
+- Contrato HTTP, exemplos e documentação de instalação atualizados.
 
-A troca de SQLite para PostgreSQL não transfere o histórico automaticamente. Backups e atualização de uma instalação PostgreSQL ficam sob a hospedagem. A entrada no catálogo do Orbit depende da publicação da receita e do download anônimo da imagem no GHCR.
+As novas tabelas são criadas automaticamente no SQLite ou PostgreSQL existente. Faça backup antes de atualizar; as migrações não têm downgrade automático. Webhooks são opcionais, sem eventos retroativos. Pedidos sem `Idempotency-Key` mantêm o comportamento anterior.
 
-Os conectores bancários continuam experimentais e ainda não foram validados com uma conta real habilitada. A instalação começa com importação de extratos; conectar uma conta exige configurar o acesso à API correspondente.
+Os conectores bancários continuam experimentais. A validação com uma conta real depende de acesso habilitado à API do banco. A integração com dados simulados e importação de extratos funciona sem essas credenciais.
 
-Instalação e integração: https://github.com/getcortexlabs/ranjit/blob/main/docs/server.md
+Configuração e exemplos: https://github.com/getcortexlabs/ranjit/blob/main/docs/backend-reliability.md

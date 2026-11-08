@@ -15,7 +15,7 @@ Em outro terminal, `ranjit key` mostra a chave da instalação. Configure no amb
 ```sh
 export RANJIT_URL=http://localhost:8080
 # RANJIT_API_KEY: chave mostrada por ranjit key
-go get github.com/getcortexlabs/ranjit@v0.3.0
+go get github.com/getcortexlabs/ranjit@v0.4.0
 ```
 
 ```go
@@ -80,22 +80,26 @@ Para habilitar uma integração existente, coloque os metadados em `RANJIT_PROFI
 ]
 ```
 
-Cadastre `BANK_CLIENT_SECRET`, `BANK_CERT_PEM` e `BANK_KEY_PEM` como **segredos** na hospedagem. PEM precisa conter as quebras de linha reais, incluindo BEGIN/END. A referência `env:NOME` é explícita; um caminho continua lendo um arquivo. Rotacionar o segredo exige reiniciar ou fazer um novo deploy do serviço. Para o Sicoob sandbox, `access_token_file` também aceita essa referência. Os campos exigidos por cada banco estão nos respectivos guias.
+Cadastre `BANK_CLIENT_SECRET`, `BANK_CERT_PEM` e `BANK_KEY_PEM` como **segredos** na hospedagem. PEM precisa conter as quebras de linha reais, incluindo BEGIN/END. A referência `env:NOME` é explícita; um caminho continua lendo um arquivo. Rotacionar um segredo bancário exige reiniciar ou fazer um novo deploy do serviço. Para o Sicoob sandbox, `access_token_file` também aceita essa referência. Os campos exigidos por cada banco estão nos respectivos guias.
 
 Não combine `RANJIT_PROFILES_JSON` com `RANJIT_PROVIDER`. Este último permanece disponível para a configuração antiga de um único conector. Perfis indisponíveis não impedem a consulta do histórico; `ranjit doctor` ajuda a identificar configuração ou certificados inválidos.
 
-Após configurar um perfil, consulte `client.Institutions(ctx)`, selecione o ID retornado e chame `client.Connect`. A conexão direta verifica as credenciais e agenda a primeira sincronização; acompanhe `client.Status` antes de assumir que os dados estão disponíveis. A autorização no navegador pertence ao sandbox simulado. Os conectores diretos acessam as contas cobertas pelas credenciais do operador; um `customer_id` diferente não concede acesso a outra conta bancária. Uma aplicação que recebe contas de terceiros precisa de uma operação de compartilhamento habilitada e do adaptador correspondente.
+Após configurar um perfil, consulte `client.Institutions(ctx)`, selecione o ID retornado e chame `client.ConnectWithKey` com uma chave aleatória persistida para a operação. A conexão direta verifica as credenciais e agenda a primeira sincronização; acompanhe `client.Status` antes de assumir que os dados estão disponíveis. A autorização no navegador pertence ao sandbox simulado. Os conectores diretos acessam as contas cobertas pelas credenciais do operador; um `customer_id` diferente não concede acesso a outra conta bancária. Uma aplicação que recebe contas de terceiros precisa de uma operação de compartilhamento habilitada e do adaptador correspondente.
 
 ## Orbit
 
-A receita preparada para o catálogo cria o serviço Ranjit, um PostgreSQL gerenciado e uma chave de API aleatória. A URL do banco entra por referência; a chave fica como segredo. O endereço HTTPS gerado é configurado em `RANJIT_BASE_URL` após o primeiro deploy.
+A receita do catálogo cria o serviço Ranjit, um PostgreSQL gerenciado e uma chave de API aleatória. A URL do banco entra por referência; a chave fica como segredo. O endereço HTTPS gerado é configurado em `RANJIT_BASE_URL` após o primeiro deploy.
 
 Depois da instalação, configure a URL e a chave no seu backend. Comece importando um extrato; quando tiver acesso bancário habilitado, adicione os perfis e segredos nas variáveis do serviço e faça um novo deploy. O painel `/app/` permanece restrito ao uso local; a instalação hospedada é operada pela API, pelas variáveis e pelos logs do Orbit.
 
-A entrada do catálogo só deve ser publicada quando a imagem versionada estiver disponível para download anônimo no GHCR. A receita usa `ghcr.io/getcortexlabs/ranjit:v0.3.0`. Enquanto a imagem estiver privada, o instalador local continua funcionando com os arquivos públicos da release, mas isso não habilita o pull automático do Orbit.
+A receita usa a imagem pública `ghcr.io/getcortexlabs/ranjit:v0.3.0`, sem login no registry. A versão instalada depende da receita presente na sua versão do Orbit; atualizar o Ranjit exige alterar a tag e fazer um novo deploy.
 
 ## Backup e atualização
 
 Use os backups do PostgreSQL na hospedagem ou `pg_dump`/`pg_restore`. Inclua os segredos em uma política separada de recuperação. `ranjit backup`, `restore` e a atualização automática com backup SQLite recusam esse modo de servidor.
 
-Antes de atualizar a imagem, faça um backup do banco. As migrações são aplicadas no início e não têm downgrade automático; voltar apenas à imagem anterior pode não reverter uma mudança de schema. Para restaurar um backup antigo, pare o serviço e revise conexões e jobs antes de retomar a coleta. O restore gerenciado do PostgreSQL não aplica as pausas automáticas do comando SQLite.
+Antes de atualizar a imagem, faça um backup do banco. As migrações são aplicadas no início e não têm downgrade automático; voltar apenas à imagem anterior pode não reverter uma mudança de schema. Para restaurar um backup antigo, pare o serviço e revise conexões e jobs antes de retomar a coleta. O restore gerenciado do PostgreSQL não aplica as pausas automáticas nem limpa a fila de webhooks como o comando SQLite. Ao restaurar uma cópia antiga, revise essa fila antes de habilitar o envio; notificações antigas podem voltar a ser entregues.
+
+## Webhooks e continuidade da integração
+
+Você pode receber `sync.succeeded` e `sync.failed` no seu backend e trocar a chave da API com um prazo para atualizar os consumidores. Configure as variáveis pelo gerenciador de segredos da hospedagem e siga o [guia de integração confiável](backend-reliability.md). A fila de entrega usa o mesmo PostgreSQL/SQLite, sem Redis nem outro serviço. O receptor precisa estar acessível pelo Ranjit e salvar os eventos por ID antes de confirmar recebimento.

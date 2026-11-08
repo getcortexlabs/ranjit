@@ -201,7 +201,7 @@ func Restore(ctx context.Context, source, destination string, replace bool) (str
 		return rollback, err
 	}
 	// Never resurrect bank collection or outstanding consent links from a backup.
-	_, err = restored.db.ExecContext(ctx, `UPDATE jobs SET status='cancelled',lease_token='',lease_until=0 WHERE status IN ('queued','running'); DELETE FROM sync_responses; UPDATE connections SET status='paused',token_hash=NULL WHERE authorization_mode='api_credentials' AND status IN ('active','paused','expired'); UPDATE connections SET status='expired',token_hash=NULL WHERE provider='sandbox' AND status IN ('active','pending');`)
+	_, err = restored.db.ExecContext(ctx, `UPDATE jobs SET status='cancelled',lease_token='',lease_until=0 WHERE status IN ('queued','running'); DELETE FROM sync_responses; DELETE FROM webhook_deliveries; UPDATE connections SET status='paused',token_hash=NULL WHERE authorization_mode='api_credentials' AND status IN ('active','paused','expired'); UPDATE connections SET status='expired',token_hash=NULL WHERE provider='sandbox' AND status IN ('active','pending');`)
 	if err == nil {
 		err = restored.checkpoint(ctx)
 	}

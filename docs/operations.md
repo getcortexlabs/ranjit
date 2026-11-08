@@ -12,6 +12,12 @@ O servidor pode usar o sandbox local ou os conectores diretos Efí, Inter, Sicoo
 | `RANJIT_DATABASE` | `./data/ranjit.db` | Caminho do arquivo SQLite |
 | `RANJIT_PROVIDER` | `sandbox` | `sandbox`, `efi`, `inter`, `sicoob`, `c6` ou `santander` |
 | `RANJIT_SYNC_INTERVAL` | `1h` | Intervalo do agendador; mínimo `1m` |
+| `RANJIT_DATABASE_URL` | — | PostgreSQL em vez de SQLite |
+| `RANJIT_PROFILES_JSON` | — | Perfis em JSON; `[]` habilita apenas arquivos |
+| `RANJIT_WEBHOOK_URL` | — | Endpoint para resultados da sincronização |
+| `RANJIT_WEBHOOK_SECRET` | — | Segredo de assinatura, mínimo 32 caracteres |
+| `RANJIT_API_KEY_PREVIOUS` | — | Chave anterior durante uma migração |
+| `RANJIT_API_KEY_PREVIOUS_EXPIRES_AT` | — | Expiração obrigatória da chave anterior em RFC3339 |
 
 O binário usa `config.json` quando `RANJIT_CONFIG` está definido ou quando não há `RANJIT_API_KEY` no ambiente e existe configuração pessoal. O arquivo explicitamente selecionado tem precedência: não há mistura de credenciais entre arquivo e ambiente. Caminhos relativos no JSON são resolvidos a partir da pasta dele. No fluxo legado, o binário lê variáveis de ambiente. Quem carrega `.env` é o Makefile ou o Compose. Ao executar `bin/ranjit` diretamente, exporte as variáveis antes. `ranjit init` cria o arquivo sem sobrescrever outro existente; `ranjit version` imprime a versão; `ranjit healthcheck` verifica `/readyz` no endereço local.
 
@@ -27,7 +33,7 @@ O processo cria novos diretórios com permissão `0700` e o arquivo com `0600`. 
 
 Use `ranjit backup copia.db`, inclusive com o servidor ativo. O comando usa `VACUUM INTO`, confere integridade e publica uma cópia consistente sem sobrescrever um destino existente. Configuração, chave da API local e credenciais bancárias não entram nessa cópia. Ela contém dados financeiros e não é criptografada. Não copie apenas o arquivo principal enquanto existe escrita no WAL.
 
-Para restaurar: `ranjit service stop` (ou encerre `serve`/`ui`) e `ranjit restore --replace copia.db`. Um lock exclusivo impede a restauração enquanto outro processo Ranjit usa esse banco. O comando valida a cópia, guarda o banco anterior ao lado do original e cancela jobs e links antigos. Conexões bancárias ficam pausadas; arquivos importados continuam disponíveis. Retome cada conexão com `ranjit renew ID`. Sem `--replace`, o destino precisa ser novo. Use discos locais que suportem hard links, como APFS, ext4 e NTFS. Processos SQLite externos não participam do lock de aplicação; encerre-os antes de restaurar.
+Para restaurar: `ranjit service stop` (ou encerre `serve`/`ui`) e `ranjit restore --replace copia.db`. Um lock exclusivo impede a restauração enquanto outro processo Ranjit usa esse banco. O comando valida a cópia, guarda o banco anterior ao lado do original e cancela jobs e links antigos. A restauração também limpa a fila de webhooks para não reenviar eventos de uma cópia antiga. Conexões bancárias ficam pausadas; arquivos importados continuam disponíveis. Retome cada conexão com `ranjit renew ID`. Sem `--replace`, o destino precisa ser novo. Use discos locais que suportem hard links, como APFS, ext4 e NTFS. Processos SQLite externos não participam do lock de aplicação; encerre-os antes de restaurar.
 
 Revogação e expiração de consentimento simulado removem as linhas dos dados financeiros. Em conexões diretas, expiração e pausa preservam o histórico, mas não apagam retroativamente backups ou garantem eliminação de bytes antigos no disco. A política de retenção também deve considerar os metadados das conexões e o histórico de jobs, que crescem nesta versão.
 
@@ -35,13 +41,13 @@ Revogação e expiração de consentimento simulado removem as linhas dos dados 
 
 `/healthz` verifica o processo. `/readyz` verifica também a conexão SQL, sem afirmar que o provedor ou o worker estão saudáveis. Os logs são JSON e incluem IDs de requisição ou de job e códigos de erro. Não incluem URL, query, headers, corpos ou mensagens brutas do provedor. Proxies precisam de configuração equivalente para não registrar os tokens dos links.
 
-SIGINT e SIGTERM encerram a aceitação de chamadas, aguardam as requisições por até dez segundos e cancelam o worker. Um job interrompido fica recuperável após a concessão de um minuto. Os adaptadores precisam respeitar cancelamento de contexto; um adaptador que ignora isso também prejudica o encerramento.
+SIGINT e SIGTERM encerram a aceitação de chamadas, aguardam as requisições por até dez segundos e cancelam os workers. Entregas de webhook interrompidas ficam recuperáveis após 30 segundos. Um job interrompido fica recuperável após a concessão de um minuto. Os adaptadores precisam respeitar cancelamento de contexto; um adaptador que ignora isso também prejudica o encerramento.
 
-Para trocar a chave da API, atualize a variável e reinicie o processo. Atualize os consumidores junto. Não há período de convivência de duas chaves.
+Para trocar a chave da API com um período de convivência, use `ranjit key rotate --grace 24h` na configuração pessoal ou as variáveis de chave anterior/expiração no servidor. O [procedimento completo](backend-reliability.md) cobre a migração dos consumidores e a recuperação de webhooks.
 
 ## Verificação
 
-`make check` valida código e comportamento sem exigir portas de rede. `make smoke` precisa de uma instância com o provedor `sandbox` rodando e testa o caminho HTTP por socket. O workflow de CI executa ambos e faz uma verificação de vulnerabilidades. A imagem Docker é construída e exercitada em um job separado.
+`make check` valida código e comportamento; os testes de webhook abrem receptores HTTP em portas locais temporárias. Defina `RANJIT_TEST_POSTGRES_URL` para executar também os testes PostgreSQL, como no CI. `make smoke` precisa de uma instância com o provedor `sandbox` rodando e testa o caminho HTTP por socket. O workflow de CI executa ambos e faz uma verificação de vulnerabilidades. A imagem Docker é construída e exercitada em um job separado.
 
 Os cinco conectores usam respostas bancárias simuladas nos testes. A validação contra uma conta habilitada é uma etapa separada, descrita em [homologação](validation.md). Perfis distintos podem usar o mesmo SQLite: cada instituição contém o nome do perfil e cada conexão permanece vinculada ao hash da aplicação, ambiente e conta. Trocar credenciais que alterem essa identidade exige uma nova conexão. Não renomeie um perfil com conexões ativas sem planejar a reconexão.
 

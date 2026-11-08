@@ -3,7 +3,6 @@ package httpapi
 import (
 	"crypto/rand"
 	"crypto/sha256"
-	"crypto/subtle"
 	"embed"
 	"io/fs"
 	"net"
@@ -134,8 +133,7 @@ func (h *Server) uiSession(w http.ResponseWriter, r *http.Request) {
 	}
 	valid := input.Token != "" && h.sessions.valid(input.Token, true)
 	if input.Key != "" {
-		hash := sha256.Sum256([]byte(input.Key))
-		valid = subtle.ConstantTimeCompare(hash[:], h.key[:]) == 1
+		valid = h.validKey(input.Key)
 	}
 	if !valid {
 		write(w, 401, map[string]any{"error": map[string]string{"message": "Acesso inválido ou expirado. Abra novamente com ranjit ui."}})

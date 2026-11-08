@@ -80,6 +80,7 @@ func (c cli) sync(ctx context.Context, command string, args []string) error {
 		return err
 	}
 	defer db.Close()
+	db.EnableWebhooks(cfg.WebhookURL)
 	svc := service.New(db, source, cfg.BaseURL)
 	connections, err := allConnections(ctx, db)
 	if err != nil {

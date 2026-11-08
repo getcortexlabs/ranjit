@@ -17,7 +17,7 @@ As integrações diretas usam as credenciais da aplicação criada pelo titular 
 Para começar localmente, instale o binário abaixo, rode `ranjit serve` e obtenha a chave com `ranjit key`. No seu backend:
 
 ```sh
-go get github.com/getcortexlabs/ranjit@v0.3.0
+go get github.com/getcortexlabs/ranjit@v0.4.0
 export RANJIT_URL=http://localhost:8080
 # Configure RANJIT_API_KEY com a chave da sua instalação.
 ```
@@ -36,6 +36,8 @@ page, err := client.SearchTransactions(ctx, ranjit.TransactionFilter{
 O SDK é um cliente HTTP: o Ranjit roda como processo separado do seu backend. A chave fica apenas no servidor. Seu aplicativo autentica os usuários e determina quais dados cada um pode acessar; `customer_id` sozinho não é uma permissão.
 
 O [exemplo de backend Go](examples/backend/) importa um CSV e consulta transações sem precisar de acesso bancário. O [guia de instalação em servidor e Orbit](docs/server.md) cobre PostgreSQL, segredos e a configuração do SDK. O painel e os comandos locais continuam disponíveis como ferramentas de apoio.
+
+Para repetir uma criação sem duplicar conexões, use `client.ConnectWithKey`. Webhooks assinados avisam quando a sincronização conclui ou falha definitivamente. A chave da API pode ser trocada com um prazo para migrar os consumidores. O [guia de integração confiável](docs/backend-reliability.md) traz configuração, exemplos e recuperação de falhas.
 
 ## Instalar
 
@@ -210,13 +212,15 @@ O [exemplo Go](examples/connect/main.go) mostra o fluxo completo. O contrato HTT
 | `GET` | `/v1/connections/{id}` | Consultar estado e última sincronização |
 | `POST` | `/v1/connections/{id}/sync` | Enfileirar sincronização |
 | `GET` | `/v1/jobs/{id}` | Acompanhar execução e tentativas |
+| `GET` | `/v1/webhooks/deliveries` | Inspecionar notificações e tentativas |
+| `POST` | `/v1/webhooks/deliveries/{id}/retry` | Reenviar notificação que falhou |
 | `GET` | `/v1/connections/{id}/accounts` | Consultar contas e saldos |
 | `GET` | `/v1/accounts/{id}/transactions` | Consultar transações |
 | `DELETE` | `/v1/connections/{id}` | Revogar e remover dados normalizados |
 
 ## Decisões do projeto
 
-Um binário, um banco e um worker. `net/http` faz o transporte; SQLite ou PostgreSQL guarda os dados e a fila; o provedor só entrega lotes normalizados. O painel usa HTML, CSS e JavaScript embutidos no executável, sem etapa de build do frontend. Não há Redis, ORM ou framework web. O driver SQLite funciona sem CGO.
+Um binário, um banco e workers para sincronização e notificações. `net/http` faz o transporte; SQLite ou PostgreSQL guarda os dados e a fila; o provedor só entrega lotes normalizados. O painel usa HTML, CSS e JavaScript embutidos no executável, sem etapa de build do frontend. Não há Redis, ORM ou framework web. O driver SQLite funciona sem CGO.
 
 Os valores monetários usam centavos inteiros. As importações são atômicas e fazem upsert por identificador estável do provedor. As respostas de leitura já recebidas ficam temporariamente no banco de dados, vinculadas ao job. A retomada mantém o período solicitado e reaproveita essas respostas; tokens e headers não entram nesse armazenamento. Os registros temporários são removidos ao concluir, falhar definitivamente, expirar ou revogar. O resultado de uma tentativa antiga é rejeitado, mesmo se chegar depois da nova tentativa.
 
@@ -233,6 +237,6 @@ make build     # bin/ranjit, sem CGO
 
 Os testes usam SQLite em diretórios temporários e exercitam os handlers HTTP reais com transporte em memória. Cobrem consentimento, autenticação, paginação, isolamento dos IDs entre conexões, rollback, repetição de sincronização, concorrência, expiração e retomada após reinício.
 
-Antes de operar fora da máquina local, leia [operação](docs/operations.md). A versão atual tem uma chave por instalação e banco sem criptografia em repouso. A configuração pessoal admite vários perfis; cada perfil direto acessa a conta vinculada às suas credenciais. O modo legado por variáveis de ambiente seleciona um provedor por processo. Webhooks, múltiplos operadores, outros produtos bancários e PostgreSQL ficam para mudanças com casos de uso definidos.
+Antes de operar fora da máquina local, leia [operação](docs/operations.md). A versão atual tem um operador por instalação e permite trocar a chave com um período de sobreposição. O banco não tem criptografia em repouso. A configuração pessoal admite vários perfis; cada perfil direto acessa a conta vinculada às suas credenciais. O modo legado por variáveis de ambiente seleciona um provedor por processo. PostgreSQL, webhooks e idempotência estão disponíveis. Múltiplos operadores e outros produtos bancários ficam para mudanças com casos de uso definidos.
 
 Contribuições: [CONTRIBUTING.md](CONTRIBUTING.md). Licença: [MIT](LICENSE).

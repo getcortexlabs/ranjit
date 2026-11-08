@@ -68,6 +68,7 @@ func TestBackupRestoreLockRollbackAndIntegrity(t *testing.T) {
 
 func TestDirectHistoryRetainedPauseFencesAndRestorePauses(t *testing.T) {
 	db, c, _ := fixture(t)
+	db.EnableWebhooks("https://backend.example/events")
 	ctx := t.Context()
 	batch, _ := (sandbox.Source{}).Fetch(ctx, c)
 	c.ID = ranjit.NewID("con")
@@ -127,6 +128,10 @@ func TestDirectHistoryRetainedPauseFencesAndRestorePauses(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer restored.Close()
+	var deliveries int
+	if err = restored.db.QueryRow(`SELECT COUNT(*) FROM webhook_deliveries`).Scan(&deliveries); err != nil || deliveries != 0 {
+		t.Fatal("restore resurrected deliveries", deliveries, err)
+	}
 	s, err := restored.Status(ctx, c.ID, future)
 	if err != nil || s.Connection.Status != "paused" || s.Transactions != 4 {
 		t.Fatalf("restored access: %+v %v", s, err)

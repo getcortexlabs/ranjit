@@ -195,6 +195,10 @@ func pageQuery(cursor string, limit int) url.Values {
 }
 
 func (c *Client) do(ctx context.Context, method, path string, input, output any) error {
+	return c.doWithKey(ctx, method, path, input, output, "")
+}
+
+func (c *Client) doWithKey(ctx context.Context, method, path string, input, output any, key string) error {
 	var body io.Reader
 	if input != nil {
 		data, err := json.Marshal(input)
@@ -209,6 +213,9 @@ func (c *Client) do(ctx context.Context, method, path string, input, output any)
 	}
 	if input != nil {
 		req.Header.Set("Content-Type", "application/json")
+	}
+	if key != "" {
+		req.Header.Set("Idempotency-Key", key)
 	}
 	return c.send(req, output)
 }
@@ -236,4 +243,27 @@ func (c *Client) send(req *http.Request, output any) error {
 		return nil
 	}
 	return decoder.Decode(output)
+}
+
+// ConnectWithKey retries a logical creation safely for 24 hours. Persist a random
+// key per operation in your backend and reuse it with the same request on retry.
+func (c *Client) ConnectWithKey(ctx context.Context, input ConnectRequest, key string) (ConnectResponse, error) {
+	var out ConnectResponse
+	if !ValidIdempotencyKey(key) {
+		return out, fmt.Errorf("%w: invalid idempotency key", ErrInvalid)
+	}
+	err := c.doWithKey(ctx, http.MethodPost, "/v1/connections", input, &out, key)
+	return out, err
+}
+
+func ValidIdempotencyKey(key string) bool {
+	if len(key) < 16 || len(key) > 128 {
+		return false
+	}
+	for _, c := range key {
+		if c < 33 || c > 126 {
+			return false
+		}
+	}
+	return true
 }
