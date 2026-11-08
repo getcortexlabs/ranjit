@@ -1120,34 +1120,14 @@
     "/v1/diagnostics": {
       "get": {
         "operationId": "diagnostics",
-        "summary": "Local server version and certificate alerts without credential details",
+        "summary": "Server version, certificate alerts, database queues and worker progress",
         "responses": {
           "200": {
             "description": "Success",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "version": {
-                      "type": "string"
-                    },
-                    "certificates": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/CertificateStatus"
-                      }
-                    },
-                    "unavailable_profiles": {
-                      "type": [
-                        "array",
-                        "null"
-                      ],
-                      "items": {
-                        "type": "string"
-                      }
-                    }
-                  }
+                  "$ref": "#/components/schemas/Diagnostics"
                 }
               }
             }
@@ -1222,6 +1202,31 @@
           },
           "500": {
             "$ref": "#/components/responses/Error500"
+          }
+        }
+      }
+    },
+    "/metrics": {
+      "get": {
+        "operationId": "metrics",
+        "summary": "Authenticated Prometheus worker and queue metrics",
+        "description": "Requires the installation API key. Fixed worker, queue, state and outcome labels; no customer or connection IDs. Step counters reset on restart; queue outcomes are retained database gauges. Unavailable storage returns 503 instead of zero values.",
+        "responses": {
+          "200": {
+            "description": "Prometheus text exposition",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "503": {
+            "description": "Metrics unavailable because storage could not be read"
           }
         }
       }
@@ -1905,9 +1910,7 @@
       "WebhookData": {
         "type": "object",
         "required": [
-          "job_id",
-          "connection_id",
-          "customer_id"
+          "connection_id"
         ],
         "properties": {
           "job_id": {
@@ -1921,8 +1924,19 @@
           },
           "error_code": {
             "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "denied",
+              "paused",
+              "expired",
+              "revoked"
+            ]
           }
-        }
+        },
+        "description": "Sync events require job_id and customer_id. Connection events require status and customer_id, except connection.revoked, which only carries connection_id and status. Delivery order is not guaranteed; query the current connection state."
       },
       "WebhookEvent": {
         "type": "object",
@@ -1940,7 +1954,13 @@
             "type": "string",
             "enum": [
               "sync.succeeded",
-              "sync.failed"
+              "sync.failed",
+              "connection.activated",
+              "connection.denied",
+              "connection.paused",
+              "connection.expired",
+              "connection.renewed",
+              "connection.revoked"
             ]
           },
           "created_at": {
@@ -2016,6 +2036,168 @@
             "type": "string"
           }
         }
+      },
+      "WorkerStatus": {
+        "type": "object",
+        "required": [
+          "state",
+          "healthy",
+          "steps",
+          "errors"
+        ],
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "disabled",
+              "starting",
+              "running",
+              "idle",
+              "stalled",
+              "error",
+              "stopped"
+            ]
+          },
+          "healthy": {
+            "type": "boolean"
+          },
+          "steps": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "errors": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "last_started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_finished_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_success_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "QueueStatus": {
+        "type": "object",
+        "required": [
+          "counts",
+          "recent_succeeded",
+          "recent_failed"
+        ],
+        "properties": {
+          "counts": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "recent_succeeded": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "recent_failed": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "oldest_due_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_succeeded_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_failed_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "description": "Database snapshot. Recent outcomes cover 24 hours; retention can remove older records. Oldest due excludes scheduled work in the future."
+      },
+      "OperationsStatus": {
+        "type": "object",
+        "required": [
+          "observed_at",
+          "database",
+          "workers",
+          "sync_queue",
+          "webhook_queue"
+        ],
+        "properties": {
+          "observed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "database": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "unavailable"
+            ]
+          },
+          "workers": {
+            "type": "object",
+            "required": [
+              "sync",
+              "webhook"
+            ],
+            "properties": {
+              "sync": {
+                "$ref": "#/components/schemas/WorkerStatus"
+              },
+              "webhook": {
+                "$ref": "#/components/schemas/WorkerStatus"
+              }
+            }
+          },
+          "sync_queue": {
+            "$ref": "#/components/schemas/QueueStatus"
+          },
+          "webhook_queue": {
+            "$ref": "#/components/schemas/QueueStatus"
+          }
+        }
+      },
+      "Diagnostics": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "certificates": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/CertificateStatus"
+            }
+          },
+          "unavailable_profiles": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "operations": {
+            "$ref": "#/components/schemas/OperationsStatus"
+          }
+        },
+        "required": [
+          "version",
+          "certificates",
+          "unavailable_profiles"
+        ]
       }
     },
     "responses": {

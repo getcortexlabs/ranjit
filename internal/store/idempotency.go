@@ -65,6 +65,9 @@ func (s *Store) CreateConnectionOnce(ctx context.Context, c ranjit.Connection, t
 		return c, deadline, err
 	}
 	if c.Status == "active" {
+		if err = s.queueConnectionEvent(ctx, tx, c, "connection.activated", c.CreatedAt); err != nil {
+			return c, deadline, err
+		}
 		if _, err = enqueue(ctx, tx, c.ID, c.CreatedAt); err != nil {
 			return c, deadline, err
 		}

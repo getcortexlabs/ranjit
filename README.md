@@ -14,6 +14,16 @@ As integrações diretas usam as credenciais da aplicação criada pelo titular 
 
 ## Usar no backend
 
+Para experimentar a integração completa com Docker:
+
+```sh
+git clone https://github.com/getcortexlabs/ranjit.git
+cd ranjit
+./scripts/quickstart.sh
+```
+
+O [quickstart](examples/quickstart/) sobe o serviço, um backend Go e o receptor de webhooks, gera as chaves e testa importação e sandbox. Os dados persistem entre reinícios. Docker é opcional para integrar seu aplicativo.
+
 Para começar localmente, instale o binário abaixo, rode `ranjit serve` e obtenha a chave com `ranjit key`. No seu backend:
 
 ```sh
@@ -37,7 +47,9 @@ O SDK é um cliente HTTP: o Ranjit roda como processo separado do seu backend. A
 
 O [exemplo de backend Go](examples/backend/) importa um CSV e consulta transações sem precisar de acesso bancário. O [guia de instalação em servidor e Orbit](docs/server.md) cobre PostgreSQL, segredos e a configuração do SDK. O painel e os comandos locais continuam disponíveis como ferramentas de apoio.
 
-Para repetir uma criação sem duplicar conexões, use `client.ConnectWithKey`. Webhooks assinados avisam quando a sincronização conclui ou falha definitivamente. A chave da API pode ser trocada com um prazo para migrar os consumidores. O [guia de integração confiável](docs/backend-reliability.md) traz configuração, exemplos e recuperação de falhas.
+Para repetir uma criação sem duplicar conexões, use `client.ConnectWithKey`. Webhooks assinados avisam sobre sincronizações e mudanças no estado das conexões. A chave da API pode ser trocada com um prazo para migrar os consumidores. O [guia de integração confiável](docs/backend-reliability.md) traz configuração, exemplos e recuperação de falhas. O [guia do SDK](docs/sdk.md) cobre paginação automática, retentativas de leitura e tratamento de erros.
+
+Para verificar a instalação pelo backend, basta configurar a mesma URL/chave e rodar `ranjit doctor --remote`. Use `--json` em automações. O comando consulta a API, o banco e os workers pelo serviço, sem precisar dos arquivos locais do Ranjit.
 
 ## Instalar
 

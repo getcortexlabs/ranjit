@@ -33,6 +33,11 @@ jobs:
           go-version: ${{ matrix.go }}
       - run: make check build
       - run: python3 scripts/test_install.py
+      - name: Upgrade real v0.3.0 SQLite and PostgreSQL installations
+        if: matrix.go == '1.27.x'
+        run: |
+          docker build -f scripts/compatibility.Dockerfile -t ranjit-compatibility .
+          docker run --rm --network host -v "$PWD:/work:ro" -e RANJIT_TEST_POSTGRES_URL ranjit-compatibility /work/bin/ranjit
       - name: Exercise PostgreSQL and the Go backend example
         run: |
           go build -o bin/backend-example ./examples/backend
@@ -55,6 +60,19 @@ jobs:
       - name: Check known vulnerabilities
         if: matrix.go == '1.27.x'
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+
+  quickstart:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Start, verify, stop and restart the backend demo
+        run: |
+          trap 'scripts/quickstart.sh reset' EXIT
+          scripts/quickstart.sh
+          scripts/quickstart.sh stop
+          scripts/quickstart.sh
+          scripts/container_upgrade.sh ranjit-quickstart-ranjit
 
   container:
     runs-on: ubuntu-latest

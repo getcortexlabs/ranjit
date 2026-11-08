@@ -15,12 +15,14 @@ import (
 )
 
 type Client struct {
-	baseURL    string
-	apiKey     string
-	HTTPClient *http.Client
+	ReadRetries RetryPolicy
+	baseURL     string
+	apiKey      string
+	HTTPClient  *http.Client
 }
 
 type APIError struct {
+	Cause      error
 	StatusCode int
 	Code       string
 	Message    string
@@ -218,31 +220,6 @@ func (c *Client) doWithKey(ctx context.Context, method, path string, input, outp
 		req.Header.Set("Idempotency-Key", key)
 	}
 	return c.send(req, output)
-}
-
-func (c *Client) send(req *http.Request, output any) error {
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	req.Header.Set("Accept", "application/json")
-	resp, err := c.HTTPClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	decoder := json.NewDecoder(io.LimitReader(resp.Body, 1<<20))
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		var problem struct {
-			Error struct {
-				Code    string `json:"code"`
-				Message string `json:"message"`
-			} `json:"error"`
-		}
-		_ = decoder.Decode(&problem)
-		return &APIError{StatusCode: resp.StatusCode, Code: problem.Error.Code, Message: problem.Error.Message, RequestID: resp.Header.Get("X-Request-ID")}
-	}
-	if output == nil {
-		return nil
-	}
-	return decoder.Decode(output)
 }
 
 // ConnectWithKey retries a logical creation safely for 24 hours. Persist a random

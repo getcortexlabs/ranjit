@@ -33,12 +33,28 @@ func (s *Store) queueWebhook(ctx context.Context, tx *transaction, j ranjit.Job,
 	if err := tx.QueryRowContext(ctx, `SELECT customer_id FROM connections WHERE id=?`, j.ConnectionID).Scan(&event.Data.CustomerID); err != nil {
 		return err
 	}
+	return s.insertWebhook(ctx, tx, event, j.ID, now)
+}
+
+func (s *Store) queueConnectionEvent(ctx context.Context, tx *transaction, c ranjit.Connection, eventType string, now time.Time) error {
+	if s.webhookTarget == "" {
+		return nil
+	}
+	data := ranjit.WebhookData{ConnectionID: c.ID, CustomerID: c.CustomerID, Status: c.Status}
+	if eventType == "connection.revoked" {
+		data.CustomerID = ""
+	}
+	event := ranjit.WebhookEvent{ID: ranjit.NewID("evt"), Type: eventType, CreatedAt: now.UTC(), Data: data}
+	return s.insertWebhook(ctx, tx, event, nil, now)
+}
+
+func (s *Store) insertWebhook(ctx context.Context, tx *transaction, event ranjit.WebhookEvent, jobID any, now time.Time) error {
 	data, err := json.Marshal(event)
 	if err != nil {
 		return err
 	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO webhook_deliveries(id,job_id,connection_id,target_hash,event_type,payload,status,created_at,updated_at,available_at)
-        VALUES (?,?,?,?,?,?,'queued',?,?,?) ON CONFLICT(job_id,event_type) DO NOTHING`, event.ID, j.ID, j.ConnectionID, s.webhookTarget, eventType, string(data), now.UnixMilli(), now.UnixMilli(), now.UnixMilli())
+        VALUES(?,?,?,?,?,?,'queued',?,?,?) ON CONFLICT(job_id,event_type) DO NOTHING`, event.ID, jobID, event.Data.ConnectionID, s.webhookTarget, event.Type, string(data), now.UnixMilli(), now.UnixMilli(), now.UnixMilli())
 	return err
 }
 

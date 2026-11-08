@@ -3,22 +3,43 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"github.com/getcortexlabs/ranjit/internal/app"
 	"github.com/getcortexlabs/ranjit/internal/config"
 	"github.com/getcortexlabs/ranjit/internal/provider"
 	"github.com/getcortexlabs/ranjit/internal/store"
+	"os"
 	"time"
 )
 
 func (c cli) doctor(ctx context.Context, args []string) error {
 	f := c.flags("doctor")
+	remote := f.Bool("remote", false, "diagnosticar serviço por HTTP usando RANJIT_URL e RANJIT_API_KEY")
+	address := f.String("url", os.Getenv("RANJIT_URL"), "origem HTTP(S) do serviço remoto")
+	asJSON := f.Bool("json", false, "relatório remoto em JSON")
+	timeout := f.Duration("timeout", 10*time.Second, "prazo total do diagnóstico remoto")
 	live := f.Bool("live", false, "consultar saldo usando as credenciais configuradas")
 	if err := f.Parse(args); err != nil {
 		return err
 	}
 	if f.NArg() != 0 {
-		return errors.New("use ranjit doctor [--live]")
+		return errors.New("use ranjit doctor [--live] ou ranjit doctor --remote [--json]")
+	}
+	explicitURL := false
+	f.Visit(func(flag *flag.Flag) {
+		if flag.Name == "url" {
+			explicitURL = true
+		}
+	})
+	if *remote || explicitURL {
+		if *live {
+			return errors.New("--live é uma consulta bancária local; não combine com --remote")
+		}
+		return c.remoteDoctor(ctx, *address, os.Getenv("RANJIT_API_KEY"), *timeout, *asJSON)
+	}
+	if *asJSON {
+		return errors.New("use ranjit doctor --remote --json para o relatório remoto")
 	}
 	cfg, err := config.Load()
 	if err != nil {

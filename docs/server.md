@@ -2,7 +2,11 @@
 
 O Ranjit é um serviço que sua aplicação chama por HTTP. O SDK Go cuida dessas chamadas. Você pode executar o binário junto do backend ou instalar o container na sua hospedagem. Docker é uma forma de instalação, não uma dependência do SDK.
 
+O [guia do SDK](sdk.md) cobre paginação, retentativas e erros. `ranjit doctor --remote --json` verifica a instalação usando somente `RANJIT_URL` e `RANJIT_API_KEY`. Diagnósticos e métricas estão descritos em [operação](operations.md).
+
 ## Desenvolvimento local
+
+O [quickstart completo](../examples/quickstart/) sobe Ranjit, backend Go e receptor de webhooks com `./scripts/quickstart.sh`. Ele gera as chaves e verifica importação e sandbox. Para trabalhar sem Docker, siga com o binário abaixo.
 
 Depois de instalar o binário:
 
@@ -102,4 +106,4 @@ Antes de atualizar a imagem, faça um backup do banco. As migrações são aplic
 
 ## Webhooks e continuidade da integração
 
-Você pode receber `sync.succeeded` e `sync.failed` no seu backend e trocar a chave da API com um prazo para atualizar os consumidores. Configure as variáveis pelo gerenciador de segredos da hospedagem e siga o [guia de integração confiável](backend-reliability.md). A fila de entrega usa o mesmo PostgreSQL/SQLite, sem Redis nem outro serviço. O receptor precisa estar acessível pelo Ranjit e salvar os eventos por ID antes de confirmar recebimento.
+Você pode receber eventos de sincronização e de estado da conexão no seu backend e trocar a chave da API com um prazo para atualizar os consumidores. Configure as variáveis pelo gerenciador de segredos da hospedagem e siga o [guia de integração confiável](backend-reliability.md). A fila de entrega usa o mesmo PostgreSQL/SQLite, sem Redis nem outro serviço. O receptor precisa estar acessível pelo Ranjit e salvar os eventos por ID antes de confirmar recebimento.

@@ -2,6 +2,9 @@
 .github
 .env
 .env.*
+**/.env
+**/.env.*
+**/node_modules
 data
 bin
 dist

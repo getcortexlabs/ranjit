@@ -101,8 +101,11 @@ class Receiver(BaseHTTPRequestHandler):
         timestamp = timestamp.removeprefix("t=")
         want = hmac.new(webhook_secret.encode(), timestamp.encode() + b"." + body, hashlib.sha256).hexdigest()
         valid = hmac.compare_digest(digest, "v1=" + want) and abs(int(timestamp) - time.time()) < 300
-        received.put((body, valid, signature))
-        self.send_response(503 if received.qsize() == 1 else 204)
+        if json.loads(body)["type"] == "sync.succeeded":
+            received.put((body, valid, signature))
+            self.send_response(503 if received.qsize() == 1 else 204)
+        else:
+            self.send_response(204)
         self.end_headers()
 
     def log_message(self, *_):
@@ -132,7 +135,7 @@ def create_connection():
 
 def wait_delivery(status):
     for _ in range(60):
-        deliveries = request(base + "/v1/webhooks/deliveries", service_key)["data"]
+        deliveries = [d for d in request(base + "/v1/webhooks/deliveries", service_key)["data"] if d["event"]["type"] == "sync.succeeded"]
         if deliveries and deliveries[0]["status"] == status and deliveries[0]["attempts"] > 0:
             return deliveries[0]
         time.sleep(0.5)

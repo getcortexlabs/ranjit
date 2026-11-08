@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/json"
@@ -20,10 +21,11 @@ import (
 )
 
 type Server struct {
-	sessions sessions
-	service  *service.Service
-	keys     func(time.Time) ([]string, error)
-	logger   *slog.Logger
+	diagnostics func(context.Context) ranjit.Diagnostics
+	sessions    sessions
+	service     *service.Service
+	keys        func(time.Time) ([]string, error)
+	logger      *slog.Logger
 }
 
 // Option configures authentication or operational routes.
@@ -80,6 +82,9 @@ func New(s *service.Service, apiKey string, logger *slog.Logger, options ...Opti
 	api.HandleFunc("POST /v1/imports/columns", h.csvHeaders)
 	api.HandleFunc("GET /v1/connections/{id}/status", h.status)
 	mux.Handle("/v1/", h.authenticate(api))
+	if h.diagnostics != nil {
+		mux.Handle("GET /metrics", h.authenticate(http.HandlerFunc(h.metrics)))
+	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { h.problem(w, ranjit.ErrNotFound) })
 	return h.middleware(mux)
 }

@@ -14,16 +14,18 @@ import (
 	"time"
 
 	"github.com/getcortexlabs/ranjit"
+	"github.com/getcortexlabs/ranjit/internal/monitor"
 	"github.com/getcortexlabs/ranjit/internal/store"
 )
 
 type Worker struct {
-	Store  *store.Store
-	URL    string
-	Secret string
-	Client *http.Client
-	Now    func() time.Time
-	Logger *slog.Logger
+	Monitor *monitor.Worker
+	Store   *store.Store
+	URL     string
+	Secret  string
+	Client  *http.Client
+	Now     func() time.Time
+	Logger  *slog.Logger
 }
 
 func New(db *store.Store, destination, secret string, logger *slog.Logger) *Worker {
@@ -33,11 +35,17 @@ func New(db *store.Store, destination, secret string, logger *slog.Logger) *Work
 }
 
 func (w *Worker) Run(ctx context.Context) {
+	defer w.Monitor.Stop()
 	defer w.Client.CloseIdleConnections()
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	for {
-		if err := w.Step(ctx); err != nil && ctx.Err() == nil {
+		w.Monitor.Begin(w.Now())
+		stepCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+		err := w.Step(stepCtx)
+		cancel()
+		w.Monitor.End(w.Now(), err)
+		if err != nil && ctx.Err() == nil {
 			w.Logger.Error("webhook delivery could not be recorded")
 		}
 		select {

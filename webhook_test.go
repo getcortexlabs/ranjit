@@ -49,3 +49,25 @@ func TestVerifyWebhookRejectsTamperingAndReplay(t *testing.T) {
 		})
 	}
 }
+
+func TestVerifyLifecycleWebhooksWithoutJob(t *testing.T) {
+	now := time.Now().UTC()
+	secret := strings.Repeat("s", 40)
+	for _, kind := range []string{"activated", "denied", "paused", "expired", "renewed", "revoked"} {
+		t.Run(kind, func(t *testing.T) {
+			data := WebhookData{ConnectionID: "con-test", Status: "active", CustomerID: "customer"}
+			if kind == "revoked" {
+				data.Status, data.CustomerID = "revoked", ""
+			}
+			body, _ := json.Marshal(WebhookEvent{ID: "evt-test", Type: "connection." + kind, CreatedAt: now, Data: data})
+			ts := strconv.FormatInt(now.Unix(), 10)
+			mac := hmac.New(sha256.New, []byte(secret))
+			mac.Write([]byte(ts + "."))
+			mac.Write(body)
+			event, err := VerifyWebhook(body, "t="+ts+",v1="+hex.EncodeToString(mac.Sum(nil)), secret, now)
+			if err != nil || event.Data.JobID != "" {
+				t.Fatal(event, err)
+			}
+		})
+	}
+}

@@ -38,6 +38,7 @@ func (c cli) inspect(ctx context.Context, command string, args []string) error {
 		return err
 	}
 	defer db.Close()
+	db.EnableWebhooks(cfg.WebhookURL)
 	if command == "revoke" {
 		if err = db.Revoke(ctx, f.Arg(0), time.Now()); err != nil {
 			return err

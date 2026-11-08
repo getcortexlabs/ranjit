@@ -7,11 +7,13 @@ import (
 	"time"
 
 	"github.com/getcortexlabs/ranjit"
+	"github.com/getcortexlabs/ranjit/internal/monitor"
 	"github.com/getcortexlabs/ranjit/internal/provider"
 	"github.com/getcortexlabs/ranjit/internal/store"
 )
 
 type Worker struct {
+	Monitor       *monitor.Worker
 	ConnectionIDs map[string]bool
 	Store         *store.Store
 	Source        provider.Source
@@ -25,10 +27,16 @@ func New(db *store.Store, source provider.Source, interval time.Duration, logger
 }
 
 func (w *Worker) Run(ctx context.Context) {
+	defer w.Monitor.Stop()
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	for {
-		if err := w.Step(ctx); err != nil && ctx.Err() == nil {
+		w.Monitor.Begin(w.Now())
+		stepCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
+		err := w.Step(stepCtx)
+		cancel()
+		w.Monitor.End(w.Now(), err)
+		if err != nil && ctx.Err() == nil {
 			w.Logger.Error("worker step failed")
 		}
 		select {

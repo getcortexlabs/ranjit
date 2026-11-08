@@ -6,16 +6,12 @@ import (
 	"math"
 	"time"
 
+	"github.com/getcortexlabs/ranjit"
 	"github.com/getcortexlabs/ranjit/internal/provider"
 )
 
 // CertificateStatus deliberately omits certificate subjects, serials and paths.
-type CertificateStatus struct {
-	Profile       string     `json:"profile"`
-	Level         string     `json:"level"`
-	ExpiresAt     *time.Time `json:"expires_at,omitempty"`
-	DaysRemaining int        `json:"days_remaining"`
-}
+type CertificateStatus = ranjit.CertificateStatus
 
 func (c Config) Certificates(now time.Time) []CertificateStatus {
 	profiles := c.Profiles

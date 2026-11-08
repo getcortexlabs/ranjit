@@ -1,0 +1,73 @@
+name: ranjit-quickstart
+services:
+  ranjit:
+    build:
+      context: ../..
+    ports:
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:3000:3000"
+    environment:
+      RANJIT_PROVIDER: sandbox
+      RANJIT_API_KEY: ${RANJIT_API_KEY:?Run scripts/quickstart.sh first}
+      RANJIT_BASE_URL: http://localhost:8080
+      RANJIT_WEBHOOK_URL: http://127.0.0.1:8081/webhooks/ranjit
+      RANJIT_WEBHOOK_SECRET: ${RANJIT_WEBHOOK_SECRET:?Missing webhook secret}
+    volumes:
+      - data:/data
+    healthcheck:
+      test: [CMD, /ranjit, healthcheck]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  backend:
+    build:
+      context: ../..
+      dockerfile: examples/quickstart/Dockerfile
+      target: backend
+    # Sharing the demo's network keeps unsigned HTTP traffic on loopback.
+    network_mode: service:ranjit
+    depends_on:
+      ranjit:
+        condition: service_healthy
+    environment:
+      APP_ADDR: 0.0.0.0:3000
+      APP_TOKEN: ${APP_TOKEN:?Missing backend token}
+      RANJIT_URL: http://127.0.0.1:8080
+      RANJIT_API_KEY: ${RANJIT_API_KEY}
+    healthcheck:
+      test: [CMD, /quickstart, health, http://127.0.0.1:3000/healthz]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  receiver:
+    build:
+      context: ../..
+      dockerfile: examples/quickstart/Dockerfile
+      target: receiver
+    network_mode: service:ranjit
+    depends_on:
+      ranjit:
+        condition: service_healthy
+    environment:
+      RANJIT_WEBHOOK_SECRET: ${RANJIT_WEBHOOK_SECRET}
+    volumes:
+      - inbox:/data
+    healthcheck:
+      test: [CMD, /quickstart, health, http://127.0.0.1:8081/healthz]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  verify:
+    image: ranjit-quickstart-tools
+    profiles: [tools]
+    network_mode: service:ranjit
+    environment:
+      APP_TOKEN: ${APP_TOKEN}
+      RANJIT_URL: http://127.0.0.1:8080
+      RANJIT_API_KEY: ${RANJIT_API_KEY}
+    volumes:
+      - inbox:/inbox:ro
+    command: [verify]
+volumes:
+  data:
+  inbox:

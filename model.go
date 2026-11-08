@@ -11,6 +11,10 @@ import (
 )
 
 var (
+	ErrUnauthorized        = errors.New("unauthorized")
+	ErrRateLimited         = errors.New("rate limited")
+	ErrResponseTooLarge    = errors.New("response exceeds 1 MiB")
+	ErrInvalidResponse     = errors.New("invalid response")
 	ErrWebhookState        = errors.New("webhook is not failed or does not belong to the configured endpoint")
 	ErrIdempotency         = errors.New("idempotency key was already used with a different request")
 	ErrNotFound            = errors.New("not found")

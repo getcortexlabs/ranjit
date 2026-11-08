@@ -15,7 +15,7 @@ set +a
 go run ./examples/webhook
 ```
 
-Em outro terminal, rode `make run`. Em um terceiro, `make example` cria uma conexão no sandbox. Abra o link exibido e aprove os dados fictícios. A primeira sincronização enviará `sync.succeeded` para o exemplo. Não é necessário habilitar um banco para esse teste.
+Em outro terminal, rode `make run`. Em um terceiro, `make example` cria uma conexão no sandbox. Abra o link exibido e aprove os dados fictícios. O receptor receberá `connection.activated` e `sync.succeeded`. Não é necessário habilitar um banco para esse teste. Para subir os serviços e verificar o fluxo automaticamente, use o [quickstart](../quickstart/).
 
 O endpoint pode receber o mesmo ID várias vezes, inclusive depois de responder com sucesso se a resposta se perder. A assinatura muda a cada tentativa; o ID e o corpo do evento permanecem iguais. O exemplo só recebe eventos, não consulta nem altera dados financeiros. Use `client.Accounts` e `client.Transactions` ao consumir a caixa de entrada se sua aplicação precisar atualizar seu próprio histórico.
 
