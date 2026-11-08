@@ -42,6 +42,7 @@ func (c cli) maintenance(ctx context.Context, command string, args []string) err
 		return err
 	}
 	defer db.Close()
+	db.EnableWebhooks(cfg.WebhookURL)
 	switch command {
 	case "backup":
 		if err = db.Backup(ctx, f.Arg(0)); err != nil {

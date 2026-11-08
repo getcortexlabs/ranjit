@@ -20,7 +20,11 @@ func main() {
 	if len(secret) < 32 {
 		log.Fatal("RANJIT_WEBHOOK_SECRET must contain at least 32 characters")
 	}
-	db, err := openInbox("webhook-inbox.db")
+	path := os.Getenv("WEBHOOK_DATABASE")
+	if path == "" {
+		path = "webhook-inbox.db"
+	}
+	db, err := openInbox(path)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -49,6 +53,15 @@ func openInbox(path string) (*sql.DB, error) {
 
 func receiver(db *sql.DB, secret string) http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+		if err := db.PingContext(ctx); err != nil {
+			http.Error(w, "unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
 	mux.HandleFunc("POST /webhooks/ranjit", func(w http.ResponseWriter, r *http.Request) {
 		r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
 		defer r.Body.Close()

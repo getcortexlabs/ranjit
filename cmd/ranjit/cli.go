@@ -30,6 +30,7 @@ Conexão automática (exige acesso à API do banco):
   ranjit configure                      Assistente de configuração
   ranjit doctor                         Conferir configuração e certificados
   ranjit doctor --live                   Conferir também o acesso ao saldo
+  ranjit doctor --remote --json          Diagnosticar instalação hospedada
   ranjit sync [perfil]                   Conectar e sincronizar agora
   ranjit serve                          API local e sincronização periódica
 

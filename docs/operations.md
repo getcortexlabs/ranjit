@@ -14,7 +14,7 @@ O servidor pode usar o sandbox local ou os conectores diretos Efí, Inter, Sicoo
 | `RANJIT_SYNC_INTERVAL` | `1h` | Intervalo do agendador; mínimo `1m` |
 | `RANJIT_DATABASE_URL` | — | PostgreSQL em vez de SQLite |
 | `RANJIT_PROFILES_JSON` | — | Perfis em JSON; `[]` habilita apenas arquivos |
-| `RANJIT_WEBHOOK_URL` | — | Endpoint para resultados da sincronização |
+| `RANJIT_WEBHOOK_URL` | — | Endpoint para sincronizações e eventos das conexões |
 | `RANJIT_WEBHOOK_SECRET` | — | Segredo de assinatura, mínimo 32 caracteres |
 | `RANJIT_API_KEY_PREVIOUS` | — | Chave anterior durante uma migração |
 | `RANJIT_API_KEY_PREVIOUS_EXPIRES_AT` | — | Expiração obrigatória da chave anterior em RFC3339 |
@@ -36,6 +36,25 @@ Use `ranjit backup copia.db`, inclusive com o servidor ativo. O comando usa `VAC
 Para restaurar: `ranjit service stop` (ou encerre `serve`/`ui`) e `ranjit restore --replace copia.db`. Um lock exclusivo impede a restauração enquanto outro processo Ranjit usa esse banco. O comando valida a cópia, guarda o banco anterior ao lado do original e cancela jobs e links antigos. A restauração também limpa a fila de webhooks para não reenviar eventos de uma cópia antiga. Conexões bancárias ficam pausadas; arquivos importados continuam disponíveis. Retome cada conexão com `ranjit renew ID`. Sem `--replace`, o destino precisa ser novo. Use discos locais que suportem hard links, como APFS, ext4 e NTFS. Processos SQLite externos não participam do lock de aplicação; encerre-os antes de restaurar.
 
 Revogação e expiração de consentimento simulado removem as linhas dos dados financeiros. Em conexões diretas, expiração e pausa preservam o histórico, mas não apagam retroativamente backups ou garantem eliminação de bytes antigos no disco. A política de retenção também deve considerar os metadados das conexões e o histórico de jobs, que crescem nesta versão.
+
+## Diagnóstico remoto e métricas
+
+Configure `RANJIT_URL` e `RANJIT_API_KEY` no ambiente do backend:
+
+```sh
+ranjit doctor --remote
+ranjit doctor --remote --json --timeout 10s
+```
+
+Esse modo não lê `config.json`, não abre banco local e não chama o banco financeiro. Verifica conectividade, chave, prontidão SQL, versão e progresso dos workers pela API. `--url` substitui a URL e também seleciona o modo remoto. O timeout vale para o diagnóstico inteiro, até um minuto.
+
+O JSON tem `schema_version: 1`, `status`, `server_version` quando disponível e `checks` com `id`, `status`, `message` e `action` opcional. Avisos retornam código de saída 0; falhas retornam 1. URL, segredos, certificados e respostas brutas não são impressos. Instalações antigas sem métricas geram um aviso de compatibilidade.
+
+`GET /v1/diagnostics` exige autenticação e inclui `operations`: disponibilidade do banco, contagens das filas, trabalho vencido mais antigo, resultados das últimas 24 horas e atividade dos workers. `idle` é saudável. `running` indica trabalho dentro do prazo; `stalled` indica ausência de progresso. A medição acompanha o início e o fim real de cada etapa. Um job bancário que falha não implica que o worker deixou de funcionar: confira também os resultados da fila.
+
+`GET /metrics` usa a mesma autenticação Bearer e retorna texto compatível com Prometheus. Configure `metrics_path: /metrics` e `authorization.credentials_file` no scraper. Não publique a chave em labels ou na URL. As séries `ranjit_worker_healthy`, `ranjit_worker_steps_total`, `ranjit_worker_errors_total`, `ranjit_queue_items`, `ranjit_queue_oldest_due_seconds`, `ranjit_queue_recent_outcomes` e `ranjit_queue_last_outcome_timestamp_seconds` usam apenas labels fixos de worker, fila, estado e resultado. Não expõem clientes, conexões, contas, perfis ou credenciais.
+
+Contadores de worker reiniciam com o processo. Resultados recentes são gauges do banco, não contadores cumulativos de eventos; as entregas também seguem a retenção de sete dias. Webhooks consideram somente o destino configurado. Sem banco disponível, `/metrics` retorna 503 em vez de informar filas vazias. Não há chamadas bancárias durante a coleta.
 
 ## Saúde e encerramento
 

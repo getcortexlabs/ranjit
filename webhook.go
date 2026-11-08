@@ -22,9 +22,10 @@ type WebhookEvent struct {
 }
 
 type WebhookData struct {
-	JobID        string `json:"job_id"`
+	Status       string `json:"status,omitempty"`
+	JobID        string `json:"job_id,omitempty"`
 	ConnectionID string `json:"connection_id"`
-	CustomerID   string `json:"customer_id"`
+	CustomerID   string `json:"customer_id,omitempty"`
 	ErrorCode    string `json:"error_code,omitempty"`
 }
 
@@ -65,7 +66,13 @@ func VerifyWebhook(body []byte, signature, secret string, now time.Time) (Webhoo
 	if !hmac.Equal(digest, mac.Sum(nil)) {
 		return event, invalid
 	}
-	if err := json.Unmarshal(body, &event); err != nil || event.ID == "" || event.Type == "" || event.CreatedAt.IsZero() || event.Data.JobID == "" || event.Data.ConnectionID == "" || event.Data.CustomerID == "" {
+	if err := json.Unmarshal(body, &event); err != nil || event.ID == "" || event.Type == "" || event.CreatedAt.IsZero() || event.Data.ConnectionID == "" {
+		return WebhookEvent{}, invalid
+	}
+	if strings.HasPrefix(event.Type, "sync.") && (event.Data.JobID == "" || event.Data.CustomerID == "") {
+		return WebhookEvent{}, invalid
+	}
+	if strings.HasPrefix(event.Type, "connection.") && (event.Data.Status == "" || event.Type != "connection.revoked" && event.Data.CustomerID == "") {
 		return WebhookEvent{}, invalid
 	}
 	return event, nil

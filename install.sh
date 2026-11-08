@@ -2,7 +2,7 @@
 # Install a released binary in the current user's directory. No sudo, Go or Docker.
 set -eu
 
-version=${RANJIT_VERSION:-v0.3.0}
+version=${RANJIT_VERSION:-v0.4.0}
 destination=${RANJIT_INSTALL_DIR:-"$HOME/.local/bin"}
 mode=binary
 case "${1:-}" in --docker) mode=docker ;; '') ;; *) echo 'Usage: sh install.sh [--docker]' >&2; exit 1 ;; esac

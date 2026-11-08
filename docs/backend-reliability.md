@@ -19,7 +19,7 @@ No sandbox, o mesmo link é recuperável enquanto estiver pendente e dentro dos 
 
 Sem o cabeçalho, `client.Connect` mantém o comportamento anterior: cada chamada cria uma conexão. O SDK não repete POSTs automaticamente. A idempotência descrita aqui se aplica apenas à criação de conexões; importações e solicitações de sincronização têm suas próprias regras de deduplicação.
 
-## Receber o resultado da sincronização
+## Receber notificações
 
 Configure no serviço:
 
@@ -30,7 +30,20 @@ RANJIT_WEBHOOK_SECRET=seu-segredo-aleatorio-com-pelo-menos-32-caracteres
 
 Use um segredo novo e diferente da chave da API. Para configuração pessoal em `config.json`, os campos são `webhook_url` e `webhook_secret`. Reinicie o serviço ao alterar essas opções. HTTP só é aceito em loopback para desenvolvimento; a URL não aceita credenciais, query ou fragmento. Docker exige um endereço alcançável de dentro do container.
 
-O Ranjit envia `sync.succeeded` após publicar o lote completo e `sync.failed` quando o job falha definitivamente. Tentativas intermediárias não geram eventos. Cancelamento, importação de arquivo e alteração de consentimento não geram notificações nesta versão. Habilitar webhooks não cria eventos retroativos. `ranjit sync` também grava os eventos quando configurado; `ranjit serve` precisa estar em execução para entregá-los.
+O Ranjit envia `sync.succeeded` após publicar o lote completo e `sync.failed` quando o job falha definitivamente. Tentativas intermediárias, cancelamento de job e importação de arquivo não geram eventos de sincronização. Habilitar webhooks não cria eventos retroativos. Os comandos locais também gravam os eventos quando configurados; `ranjit serve` precisa estar em execução para entregá-los.
+
+Mudanças efetivas de conexão geram eventos na mesma transação do estado:
+
+| Evento | Quando ocorre | `data.status` |
+| --- | --- | --- |
+| `connection.activated` | Criação com acesso direto ou aprovação do sandbox | `active` |
+| `connection.denied` | Recusa no sandbox | `denied` |
+| `connection.paused` | Pausa de uma conexão direta | `paused` |
+| `connection.expired` | Prazo local vencido, detectado pelo worker | `expired` |
+| `connection.renewed` | Renovação do acesso direto | `active` |
+| `connection.revoked` | Revogação | `revoked` |
+
+Esses eventos não têm `job_id`. Incluem `connection_id`, `customer_id` e `status`, exceto a revogação, que conserva apenas `connection_id` e `status`. Uma pausa ou revogação já aplicada não gera outro evento; repetir a criação com a mesma chave também não. Uma nova renovação que estende o prazo é outra mudança efetiva.
 
 ```json
 {
@@ -55,7 +68,7 @@ O [receptor Go executável](../examples/webhook/) mostra assinatura, limite de c
 
 A fila fica no mesmo SQLite/PostgreSQL, gravada na mesma transação dos dados. O envio ocorre em um worker separado, com timeout de dez segundos. Redirecionamentos não são seguidos. Qualquer resposta fora de `2xx` ou erro de transporte agenda outra tentativa: até oito, com intervalos de 10, 20, 40, 80, 160, 320 e 640 segundos. Reinícios recuperam tentativas interrompidas após o lease de 30 segundos. Tentativas reclamadas depois de uma queda também contam no limite.
 
-A entrega pode se repetir e não tem garantia de ordem entre eventos. ID e corpo permanecem iguais; cada tentativa recebe uma assinatura com horário novo. A fila conserva registros por sete dias desde a última alteração. Trocar a URL não redireciona eventos antigos para o novo destinatário; eles ficam associados à URL original até expirar. Desabilitar webhooks pausa as entregas. Revogar uma conexão apaga seus registros de entrega, mas não desfaz uma requisição já enviada.
+A entrega pode se repetir e não tem garantia de ordem entre eventos. ID e corpo permanecem iguais; cada tentativa recebe uma assinatura com horário novo. Consulte o estado atual da conexão pela API antes de tomar uma decisão que dependa dele. A fila conserva registros por sete dias desde a última alteração. Trocar a URL não redireciona eventos antigos para o novo destinatário; eles ficam associados à URL original até expirar. Desabilitar webhooks pausa as entregas. Revogar uma conexão apaga as entregas anteriores e deixa somente o aviso mínimo de revogação; uma requisição já enviada não pode ser desfeita. Restaurar um backup limpa a fila e não emite eventos de restauração.
 
 ```go
 deliveries, err := client.WebhookDeliveries(ctx, "", 50)

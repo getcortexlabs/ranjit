@@ -42,7 +42,7 @@ func TestBackendMigrationPreservesExistingGrantAndJob(t *testing.T) {
 		if _, err := s.db.ExecContext(t.Context(), `DROP TABLE webhook_deliveries; DROP TABLE connection_requests;`); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := s.db.ExecContext(t.Context(), `DELETE FROM schema_migrations WHERE name=?`, migration); err != nil {
+		if _, err := s.db.ExecContext(t.Context(), `DELETE FROM schema_migrations WHERE name>=?`, migration); err != nil {
 			t.Fatal(err)
 		}
 		s.Close()
@@ -147,11 +147,11 @@ func TestConnectionRequestRollsBackWithGrant(t *testing.T) {
 func TestWebhookDeliveryRestartFencingRetryAndTarget(t *testing.T) {
 	backendStores(t, func(t *testing.T, s *Store, path string) {
 		target := "https://backend.example/webhooks"
-		s.EnableWebhooks(target)
 		c := directGrant()
 		if err := s.CreateAuthorizedConnection(t.Context(), c); err != nil {
 			t.Fatal(err)
 		}
+		s.EnableWebhooks(target)
 		j, err := s.Claim(t.Context(), testNow, time.Minute)
 		if err != nil {
 			t.Fatal(err)
@@ -244,19 +244,19 @@ func TestWebhookDeliveryRestartFencingRetryAndTarget(t *testing.T) {
 			t.Fatal(err)
 		}
 		page, err = s.WebhookDeliveries(t.Context(), "", 100)
-		if err != nil || len(page.Data) != 0 {
-			t.Fatal("revoked metadata retained", err)
+		if err != nil || len(page.Data) != 1 || page.Data[0].Event.Type != "connection.revoked" || page.Data[0].Event.Data.CustomerID != "" {
+			t.Fatal("revocation retained more than its minimal event", err)
 		}
 	})
 }
 
 func TestWebhookFailureEventsAndOutboxRollback(t *testing.T) {
 	backendStores(t, func(t *testing.T, s *Store, _ string) {
-		s.EnableWebhooks("https://backend.example/webhooks")
 		c := directGrant()
 		if err := s.CreateAuthorizedConnection(t.Context(), c); err != nil {
 			t.Fatal(err)
 		}
+		s.EnableWebhooks("https://backend.example/webhooks")
 		j, err := s.Claim(t.Context(), testNow, time.Minute)
 		if err != nil {
 			t.Fatal(err)

@@ -29,7 +29,7 @@ jobs:
           --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       RANJIT_TEST_POSTGRES_URL: postgres://ranjit:test-only-password@localhost:5432/ranjit?sslmode=disable
-    timeout-minutes: 30
+    timeout-minutes: 45
     permissions:
       contents: write
       packages: write
@@ -40,10 +40,24 @@ jobs:
           go-version: '1.27.x'
       - run: make check build
       - run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+      - run: python3 scripts/test_install.py
+      - name: Validate upgrade compatibility and the backend quickstart
+        run: |
+          docker build -f scripts/compatibility.Dockerfile -t ranjit-compatibility .
+          docker run --rm --network host -v "$PWD:/work:ro" -e RANJIT_TEST_POSTGRES_URL ranjit-compatibility /work/bin/ranjit
+          trap 'scripts/quickstart.sh reset' EXIT
+          scripts/quickstart.sh
+          scripts/quickstart.sh stop
+          scripts/quickstart.sh
+          scripts/container_upgrade.sh ranjit-quickstart-ranjit
       - name: Build release archives
         env:
           RELEASE_VERSION: ${{ github.ref_name }}
         run: python3 scripts/release.py --version "$RELEASE_VERSION"
+      - name: Verify archives and install the candidate binary
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: python3 scripts/verify_release.py --version "$RELEASE_VERSION" --artifacts dist
       - name: Build and smoke-test container
         env:
           RELEASE_VERSION: ${{ github.ref_name }}
@@ -68,18 +82,18 @@ jobs:
             gzip -n "$artifact"
           done
           (cd dist && sha256sum *.docker.tar.gz >> checksums.txt)
-          sha256sum compose.quick.yaml >> dist/checksums.txt
+          sha256sum compose.quick.yaml install.sh >> dist/checksums.txt
           docker load --input "dist/ranjit_${RELEASE_VERSION}_linux_amd64.docker.tar.gz"
           docker compose -f compose.quick.yaml up -d --wait --wait-timeout 60
           docker compose -f compose.quick.yaml exec -T ranjit /ranjit demo
           docker compose -f compose.quick.yaml exec -T ranjit /ranjit doctor
           docker compose -f compose.quick.yaml down --volumes
-      - name: Publish binaries
+      - name: Stage release downloads
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_VERSION: ${{ github.ref_name }}
         run: |
-          gh release create "$RELEASE_VERSION" dist/* install.sh compose.quick.yaml --verify-tag --title "Ranjit $RELEASE_VERSION" --notes-file docs/release-notes.md
+          gh release create "$RELEASE_VERSION" dist/* install.sh compose.quick.yaml --draft --verify-tag --title "Ranjit $RELEASE_VERSION" --notes-file docs/release-notes.md
       - name: Publish container image
         env:
           REGISTRY_TOKEN: ${{ github.token }}
@@ -87,4 +101,16 @@ jobs:
           RELEASE_VERSION: ${{ github.ref_name }}
         run: |
           printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io --username "$REGISTRY_USER" --password-stdin
-          docker buildx build --platform linux/amd64,linux/arm64 --build-arg VERSION="$RELEASE_VERSION" --tag "ghcr.io/getcortexlabs/ranjit:$RELEASE_VERSION" --tag ghcr.io/getcortexlabs/ranjit:latest --push .
+          docker buildx build --platform linux/amd64,linux/arm64 --build-arg VERSION="$RELEASE_VERSION" --tag "ghcr.io/getcortexlabs/ranjit:$RELEASE_VERSION" --push .
+      - name: Verify public images before announcing the release
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: python3 scripts/verify_release.py --version "$RELEASE_VERSION" --images
+      - name: Publish and verify downloads and SDK
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          gh release edit "$RELEASE_VERSION" --draft=false
+          python3 scripts/verify_release.py --version "$RELEASE_VERSION" --published
+          docker buildx imagetools create --tag ghcr.io/getcortexlabs/ranjit:latest "ghcr.io/getcortexlabs/ranjit:$RELEASE_VERSION"

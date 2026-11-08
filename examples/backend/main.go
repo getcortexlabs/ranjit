@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
@@ -19,12 +20,17 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	client.ReadRetries = ranjit.RetryPolicy{MaxAttempts: 3, MaxElapsedTime: 10 * time.Second}
 	token := os.Getenv("APP_TOKEN")
 	if len(token) < 32 || token == os.Getenv("RANJIT_API_KEY") {
 		log.Fatal("APP_TOKEN must be a separate secret of at least 32 characters")
 	}
-	server := &http.Server{Addr: "127.0.0.1:3000", Handler: routes(client, token), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 35 * time.Second, IdleTimeout: time.Minute}
-	log.Print("example backend listening on http://127.0.0.1:3000")
+	addr := os.Getenv("APP_ADDR")
+	if addr == "" {
+		addr = "127.0.0.1:3000"
+	}
+	server := &http.Server{Addr: addr, Handler: routes(client, token), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 35 * time.Second, IdleTimeout: time.Minute}
+	log.Print("example backend listening on ", addr)
 	log.Fatal(server.ListenAndServe())
 }
 
@@ -45,6 +51,16 @@ func routes(client *ranjit.Client, token string) http.Handler {
 	})
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
+		if r.Method == http.MethodGet && r.URL.Path == "/healthz" {
+			ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+			defer cancel()
+			if err := client.Ready(ctx); err != nil {
+				http.Error(w, "unavailable", http.StatusServiceUnavailable)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		if subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte("Bearer "+token)) != 1 {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return

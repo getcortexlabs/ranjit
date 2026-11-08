@@ -91,11 +91,11 @@ func TestAPIKeysReloadAndExpireWithoutRestart(t *testing.T) {
 
 func TestWebhookDeliverySDKAndAuthentication(t *testing.T) {
 	client, s, w, _ := setup(t)
-	s.Store.EnableWebhooks("https://backend.example/events")
 	result := connect(t, client, "customer")
 	if code, _ := decide(t, client, result, "approve", s.BaseURL); code != 200 {
 		t.Fatal(code)
 	}
+	s.Store.EnableWebhooks("https://backend.example/events")
 	if err := w.Step(t.Context()); err != nil {
 		t.Fatal(err)
 	}

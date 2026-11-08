@@ -14,9 +14,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/getcortexlabs/ranjit"
 	"github.com/getcortexlabs/ranjit/internal/app"
 	"github.com/getcortexlabs/ranjit/internal/config"
 	"github.com/getcortexlabs/ranjit/internal/httpapi"
+	"github.com/getcortexlabs/ranjit/internal/monitor"
 	"github.com/getcortexlabs/ranjit/internal/service"
 	"github.com/getcortexlabs/ranjit/internal/store"
 	"github.com/getcortexlabs/ranjit/internal/webhook"
@@ -122,9 +124,22 @@ func run(logger *slog.Logger) error {
 	}
 	db.EnableWebhooks(cfg.WebhookURL)
 	svc := service.New(db, source, cfg.BaseURL)
-	server := &http.Server{Addr: cfg.Addr, Handler: httpapi.New(svc, cfg.APIKey, logger, httpapi.APIKeys(cfg.APIKeys), httpapi.Diagnostics(func() any {
-		return map[string]any{"version": version, "certificates": cfg.Certificates(time.Now()), "unavailable_profiles": unavailable}
-	})), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
+	syncMonitor := monitor.NewWorker(true, 50*time.Second)
+	hookMonitor := monitor.NewWorker(cfg.WebhookURL != "", 25*time.Second)
+	diagnostics := func(ctx context.Context) ranjit.Diagnostics {
+		now := time.Now().UTC()
+		op := &ranjit.OperationsStatus{ObservedAt: now, Database: "ready", Workers: map[string]ranjit.WorkerStatus{"sync": syncMonitor.Snapshot(now), "webhook": hookMonitor.Snapshot(now)}}
+		ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		defer cancel()
+		var err error
+		op.SyncQueue, op.WebhookQueue, err = db.Queues(ctx, now)
+		if err != nil {
+			op.Database = "unavailable"
+		}
+		return ranjit.Diagnostics{Version: version, Certificates: cfg.Certificates(now), UnavailableProfiles: unavailable, Operations: op}
+	}
+	server := &http.Server{Addr: cfg.Addr, Handler: httpapi.New(svc, cfg.APIKey, logger, httpapi.APIKeys(cfg.APIKeys), httpapi.Operations(diagnostics)), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
+
 	listener, err := net.Listen("tcp", cfg.Addr)
 	if err != nil {
 		return err
@@ -132,12 +147,19 @@ func run(logger *slog.Logger) error {
 	workerCtx, cancelWorker := context.WithCancel(context.Background())
 	defer cancelWorker()
 	workerDone := make(chan struct{})
-	go func() { defer close(workerDone); worker.New(db, source, cfg.SyncInterval, logger).Run(workerCtx) }()
+	go func() {
+		defer close(workerDone)
+		w := worker.New(db, source, cfg.SyncInterval, logger)
+		w.Monitor = syncMonitor
+		w.Run(workerCtx)
+	}()
 	webhookDone := make(chan struct{})
 	go func() {
 		defer close(webhookDone)
 		if cfg.WebhookURL != "" {
-			webhook.New(db, cfg.WebhookURL, cfg.WebhookSecret, logger).Run(workerCtx)
+			w := webhook.New(db, cfg.WebhookURL, cfg.WebhookSecret, logger)
+			w.Monitor = hookMonitor
+			w.Run(workerCtx)
 		}
 	}()
 	defer func() { cancelWorker(); <-webhookDone }()

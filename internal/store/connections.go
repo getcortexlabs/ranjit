@@ -40,6 +40,9 @@ func (s *Store) CreateAuthorizedConnection(ctx context.Context, c ranjit.Connect
 	if _, err = enqueue(ctx, tx, c.ID, c.CreatedAt); err != nil {
 		return err
 	}
+	if err = s.queueConnectionEvent(ctx, tx, c, "connection.activated", c.CreatedAt); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
@@ -109,6 +112,13 @@ func (s *Store) Decide(ctx context.Context, hash string, approve bool, now time.
 			return c, err
 		}
 	}
+	eventType := "connection.denied"
+	if approve {
+		eventType = "connection.activated"
+	}
+	if err = s.queueConnectionEvent(ctx, tx, c, eventType, now); err != nil {
+		return c, err
+	}
 	return c, tx.Commit()
 }
 
@@ -119,6 +129,13 @@ func (s *Store) Revoke(ctx context.Context, id string, now time.Time) error {
 		return err
 	}
 	defer tx.Rollback()
+	c, err := scanConnection(tx.QueryRowContext(ctx, `SELECT `+connectionColumns+` FROM connections WHERE id=?`, id))
+	if err != nil {
+		return err
+	}
+	if c.Status == "revoked" {
+		return nil
+	}
 	result, err := tx.ExecContext(ctx, `UPDATE connections SET status = 'revoked', token_hash = NULL WHERE id = ?`, id)
 	if err = changed(result, err, ranjit.ErrNotFound); err != nil {
 		return err
@@ -131,6 +148,10 @@ func (s *Store) Revoke(ctx context.Context, id string, now time.Time) error {
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE jobs SET status = 'cancelled', updated_at = ?, lease_token = '', lease_until = 0
 		WHERE connection_id = ? AND status IN ('queued','running')`, now.UnixMilli(), id); err != nil {
+		return err
+	}
+	c.Status = "revoked"
+	if err = s.queueConnectionEvent(ctx, tx, c, "connection.revoked", now); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -149,10 +170,31 @@ func (s *Store) Expire(ctx context.Context, now time.Time) error {
 	if _, err = tx.ExecContext(ctx, `DELETE FROM webhook_deliveries WHERE updated_at<?`, now.Add(-WebhookRetention).UnixMilli()); err != nil {
 		return err
 	}
-	if _, err = tx.ExecContext(ctx, `UPDATE connections SET status = 'expired', token_hash = NULL
-		WHERE (provider <> 'file' AND status = 'active' AND consent_expires_at <= ?) OR (status = 'pending' AND authorization_expires_at <= ?)`, now.UnixMilli(), now.UnixMilli()); err != nil {
+	rows, err := tx.QueryContext(ctx, `UPDATE connections SET status='expired',token_hash=NULL
+        WHERE (provider<>'file' AND status='active' AND consent_expires_at<=?) OR (status='pending' AND authorization_expires_at<=?) RETURNING `+connectionColumns, now.UnixMilli(), now.UnixMilli())
+	if err != nil {
 		return err
 	}
+	var expired []ranjit.Connection
+	for rows.Next() {
+		c, e := scanConnection(rows)
+		if e != nil {
+			rows.Close()
+			return e
+		}
+		expired = append(expired, c)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	for _, c := range expired {
+		if err = s.queueConnectionEvent(ctx, tx, c, "connection.expired", now); err != nil {
+			return err
+		}
+	}
+
 	if _, err = tx.ExecContext(ctx, `DELETE FROM accounts WHERE connection_id IN (SELECT id FROM connections WHERE status = 'expired' AND provider = 'sandbox')`); err != nil {
 		return err
 	}
@@ -197,11 +239,24 @@ func (s *Store) Pause(ctx context.Context, id string, now time.Time) error {
 		return err
 	}
 	defer tx.Rollback()
-	result, err := tx.ExecContext(ctx, `UPDATE connections SET status='paused' WHERE id=? AND authorization_mode='api_credentials' AND status IN ('active','expired','paused')`, id)
-	if err = changed(result, err, ranjit.ErrConflict); err != nil {
+	c, err := scanConnection(tx.QueryRowContext(ctx, `SELECT `+connectionColumns+` FROM connections WHERE id=?`, id))
+	if err != nil {
+		return err
+	}
+	if c.AuthorizationMode != "api_credentials" || (c.Status != "active" && c.Status != "expired" && c.Status != "paused") {
+		return ranjit.ErrConflict
+	}
+	if c.Status == "paused" {
+		return nil
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE connections SET status='paused' WHERE id=?`, id); err != nil {
 		return err
 	}
 	if err = cancelJobs(ctx, tx, id, now); err != nil {
+		return err
+	}
+	c.Status = "paused"
+	if err = s.queueConnectionEvent(ctx, tx, c, "connection.paused", now); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -218,14 +273,28 @@ func (s *Store) Renew(ctx context.Context, id, binding string, deadline, now tim
 		return ranjit.Connection{}, err
 	}
 	defer tx.Rollback()
-	c, err := scanConnection(tx.QueryRowContext(ctx, `UPDATE connections SET status='active',consent_expires_at=? WHERE id=? AND credential_id=? AND authorization_mode='api_credentials' AND status IN ('active','paused','expired') RETURNING `+connectionColumns, deadline.UnixMilli(), id, binding))
+	c, err := scanConnection(tx.QueryRowContext(ctx, `SELECT `+connectionColumns+` FROM connections WHERE id=?`, id))
 	if err != nil {
+		return c, err
+	}
+	if c.CredentialID != binding || c.AuthorizationMode != "api_credentials" || (c.Status != "active" && c.Status != "paused" && c.Status != "expired") {
+		return c, ranjit.ErrConflict
+	}
+	deadline = deadline.UTC().Truncate(time.Millisecond)
+	if c.Status == "active" && c.ConsentExpiresAt.Equal(deadline) {
+		return c, nil
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE connections SET status='active',consent_expires_at=? WHERE id=?`, deadline.UnixMilli(), id); err != nil {
 		return c, err
 	}
 	if err = cancelJobs(ctx, tx, id, now); err != nil {
 		return c, err
 	}
 	if _, err = enqueue(ctx, tx, id, now); err != nil {
+		return c, err
+	}
+	c.Status, c.ConsentExpiresAt = "active", deadline
+	if err = s.queueConnectionEvent(ctx, tx, c, "connection.renewed", now); err != nil {
 		return c, err
 	}
 	return c, tx.Commit()
