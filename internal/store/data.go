@@ -39,6 +39,10 @@ func (s *Store) Complete(ctx context.Context, j ranjit.Job, batch provider.Snaps
 	if err = writeSnapshot(ctx, tx, j.ConnectionID, batch, now); err != nil {
 		return err
 	}
+	j.ErrorCode = ""
+	if err = s.queueWebhook(ctx, tx, j, "sync.succeeded", now); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 

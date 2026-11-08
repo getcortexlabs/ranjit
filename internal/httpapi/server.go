@@ -22,21 +22,21 @@ import (
 type Server struct {
 	sessions sessions
 	service  *service.Service
-	key      [32]byte
+	keys     func(time.Time) ([]string, error)
 	logger   *slog.Logger
 }
 
-// Option adds authenticated operational information without exposing credentials.
-type Option func(*http.ServeMux)
+// Option configures authentication or operational routes.
+type Option func(*Server, *http.ServeMux)
 
 func Diagnostics(fn func() any) Option {
-	return func(mux *http.ServeMux) {
+	return func(_ *Server, mux *http.ServeMux) {
 		mux.HandleFunc("GET /v1/diagnostics", func(w http.ResponseWriter, r *http.Request) { write(w, 200, fn()) })
 	}
 }
 
 func New(s *service.Service, apiKey string, logger *slog.Logger, options ...Option) http.Handler {
-	h := &Server{service: s, key: sha256.Sum256([]byte(apiKey)), logger: logger}
+	h := &Server{service: s, keys: func(time.Time) ([]string, error) { return []string{apiKey}, nil }, logger: logger}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /app", h.dashboard)
 	mux.HandleFunc("GET /app/", h.dashboard)
@@ -57,8 +57,10 @@ func New(s *service.Service, apiKey string, logger *slog.Logger, options ...Opti
 	mux.HandleFunc("POST /sandbox/authorize", h.decide)
 	api := http.NewServeMux()
 	for _, option := range options {
-		option(api)
+		option(h, api)
 	}
+	api.HandleFunc("GET /v1/webhooks/deliveries", h.webhookDeliveries)
+	api.HandleFunc("POST /v1/webhooks/deliveries/{id}/retry", h.retryWebhook)
 	api.HandleFunc("GET /v1/institutions", func(w http.ResponseWriter, r *http.Request) {
 		write(w, http.StatusOK, ranjit.Page[ranjit.Institution]{Data: s.Source.Institutions()})
 	})
@@ -91,8 +93,7 @@ func (h *Server) authenticate(next http.Handler) http.Handler {
 			}
 		}
 		prefix, token, ok := strings.Cut(r.Header.Get("Authorization"), " ")
-		got := sha256.Sum256([]byte(token))
-		if !ok || !strings.EqualFold(prefix, "Bearer") || token == "" || subtle.ConstantTimeCompare(got[:], h.key[:]) != 1 {
+		if !ok || !strings.EqualFold(prefix, "Bearer") || token == "" || !h.validKey(token) {
 			w.Header().Set("WWW-Authenticate", "Bearer")
 			write(w, http.StatusUnauthorized, map[string]any{"error": map[string]string{"code": "unauthorized", "message": "a valid bearer token is required"}})
 			return
@@ -191,6 +192,10 @@ func (h *Server) problem(w http.ResponseWriter, err error) {
 		status, code, message = http.StatusNotFound, "not_found", "resource not found"
 	case errors.Is(err, ranjit.ErrConsent):
 		status, code, message = http.StatusGone, "invalid_authorization", ranjit.ErrConsent.Error()
+	case errors.Is(err, ranjit.ErrIdempotency):
+		status, code, message = http.StatusConflict, "idempotency_conflict", ranjit.ErrIdempotency.Error()
+	case errors.Is(err, ranjit.ErrWebhookState):
+		status, code, message = http.StatusConflict, "webhook_not_retryable", ranjit.ErrWebhookState.Error()
 	case errors.Is(err, ranjit.ErrConflict):
 		status, code, message = http.StatusConflict, "inactive_connection", ranjit.ErrConflict.Error()
 	case errors.Is(err, ranjit.ErrInvalid):
@@ -203,4 +208,22 @@ func (h *Server) problem(w http.ResponseWriter, err error) {
 		h.logger.Error("request failed", "request_id", w.Header().Get("X-Request-ID"))
 	}
 	write(w, status, map[string]any{"error": map[string]string{"code": code, "message": message}})
+}
+
+func APIKeys(source func(time.Time) ([]string, error)) Option {
+	return func(h *Server, _ *http.ServeMux) { h.keys = source }
+}
+
+func (h *Server) validKey(token string) bool {
+	keys, err := h.keys(h.service.Now())
+	if err != nil || token == "" {
+		return false
+	}
+	got := sha256.Sum256([]byte(token))
+	matched := 0
+	for _, key := range keys {
+		want := sha256.Sum256([]byte(key))
+		matched |= subtle.ConstantTimeCompare(got[:], want[:])
+	}
+	return matched == 1
 }

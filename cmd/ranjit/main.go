@@ -19,6 +19,7 @@ import (
 	"github.com/getcortexlabs/ranjit/internal/httpapi"
 	"github.com/getcortexlabs/ranjit/internal/service"
 	"github.com/getcortexlabs/ranjit/internal/store"
+	"github.com/getcortexlabs/ranjit/internal/webhook"
 	"github.com/getcortexlabs/ranjit/internal/worker"
 )
 
@@ -119,8 +120,9 @@ func run(logger *slog.Logger) error {
 			logger.Warn("certificate needs attention", "profile", cert.Profile, "status", cert.Level, "days_remaining", cert.DaysRemaining)
 		}
 	}
+	db.EnableWebhooks(cfg.WebhookURL)
 	svc := service.New(db, source, cfg.BaseURL)
-	server := &http.Server{Addr: cfg.Addr, Handler: httpapi.New(svc, cfg.APIKey, logger, httpapi.Diagnostics(func() any {
+	server := &http.Server{Addr: cfg.Addr, Handler: httpapi.New(svc, cfg.APIKey, logger, httpapi.APIKeys(cfg.APIKeys), httpapi.Diagnostics(func() any {
 		return map[string]any{"version": version, "certificates": cfg.Certificates(time.Now()), "unavailable_profiles": unavailable}
 	})), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	listener, err := net.Listen("tcp", cfg.Addr)
@@ -131,6 +133,14 @@ func run(logger *slog.Logger) error {
 	defer cancelWorker()
 	workerDone := make(chan struct{})
 	go func() { defer close(workerDone); worker.New(db, source, cfg.SyncInterval, logger).Run(workerCtx) }()
+	webhookDone := make(chan struct{})
+	go func() {
+		defer close(webhookDone)
+		if cfg.WebhookURL != "" {
+			webhook.New(db, cfg.WebhookURL, cfg.WebhookSecret, logger).Run(workerCtx)
+		}
+	}()
+	defer func() { cancelWorker(); <-webhookDone }()
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- server.Serve(listener) }()
 	if ui {

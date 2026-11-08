@@ -2,9 +2,12 @@ package service
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -30,6 +33,23 @@ func New(db *store.Store, source provider.Source, baseURL string) *Service {
 }
 
 func (s *Service) Connect(ctx context.Context, req ranjit.ConnectRequest) (ranjit.ConnectResponse, error) {
+	return s.ConnectWithKey(ctx, req, "")
+}
+
+func (s *Service) ConnectWithKey(ctx context.Context, req ranjit.ConnectRequest, key string) (ranjit.ConnectResponse, error) {
+	if key != "" && !ranjit.ValidIdempotencyKey(key) {
+		return ranjit.ConnectResponse{}, fmt.Errorf("%w: Idempotency-Key must contain 16 to 128 printable ASCII characters without spaces", ranjit.ErrInvalid)
+	}
+	encoded, _ := json.Marshal(req)
+	fingerprint := tokenHash(string(encoded))
+	keyHash := ""
+	if key != "" {
+		keyHash = tokenHash(key)
+		c, deadline, err := s.Store.ReplayConnection(ctx, keyHash, fingerprint, s.Now())
+		if !errors.Is(err, ranjit.ErrNotFound) {
+			return s.connectResponse(c, deadline, key, ""), err
+		}
+	}
 	if strings.TrimSpace(req.CustomerID) != req.CustomerID || req.CustomerID == "" || len(req.CustomerID) > 128 || strings.ContainsAny(req.CustomerID, "\x00\r\n") {
 		return ranjit.ConnectResponse{}, fmt.Errorf("%w: customer_id must contain 1 to 128 bytes without surrounding whitespace", ranjit.ErrInvalid)
 	}
@@ -61,10 +81,8 @@ func (s *Service) Connect(ctx context.Context, req ranjit.ConnectRequest) (ranji
 		}
 		now := s.Now().UTC().Truncate(time.Millisecond)
 		c := ranjit.Connection{ID: ranjit.NewID("con"), CustomerID: req.CustomerID, InstitutionID: institution.ID, Provider: institution.Provider, Status: "active", CreatedAt: now, ConsentExpiresAt: now.Add(ConsentTTL), AuthorizationMode: "api_credentials", CredentialID: source.CredentialID()}
-		if err := s.Store.CreateAuthorizedConnection(ctx, c); err != nil {
-			return ranjit.ConnectResponse{}, err
-		}
-		return ranjit.ConnectResponse{Connection: c}, nil
+		c, deadline, err := s.Store.CreateConnectionOnce(ctx, c, nil, time.Time{}, keyHash, fingerprint)
+		return s.connectResponse(c, deadline, key, ""), err
 	}
 	if institution.Provider != "sandbox" {
 		return ranjit.ConnectResponse{}, ranjit.ErrInvalid
@@ -72,11 +90,12 @@ func (s *Service) Connect(ctx context.Context, req ranjit.ConnectRequest) (ranji
 	now := s.Now().UTC().Truncate(time.Millisecond)
 	token := rand.Text()
 	c := ranjit.Connection{ID: ranjit.NewID("con"), CustomerID: req.CustomerID, InstitutionID: req.InstitutionID, Provider: "sandbox", Status: "pending", CreatedAt: now, ConsentExpiresAt: now.Add(ConsentTTL), AuthorizationMode: "sandbox_consent"}
-	deadline := now.Add(AuthorizationTTL)
-	if err := s.Store.CreateConnection(ctx, c, tokenHash(token), deadline); err != nil {
-		return ranjit.ConnectResponse{}, err
+	if key != "" {
+		token = sandboxToken(key, c.ID)
 	}
-	return ranjit.ConnectResponse{Connection: c, AuthorizationURL: s.BaseURL + "/sandbox/authorize?token=" + url.QueryEscape(token), AuthorizationExpiresAt: deadline}, nil
+	deadline := now.Add(AuthorizationTTL)
+	c, deadline, err := s.Store.CreateConnectionOnce(ctx, c, tokenHash(token), deadline, keyHash, fingerprint)
+	return s.connectResponse(c, deadline, key, token), err
 }
 
 func (s *Service) Consent(ctx context.Context, token string) (ranjit.Connection, error) {
@@ -124,4 +143,24 @@ func (s *Service) Renew(ctx context.Context, id string) (ranjit.Connection, erro
 		return c, err
 	}
 	return s.Store.Renew(ctx, id, c.CredentialID, s.Now().Add(ConsentTTL), s.Now())
+}
+
+// The caller supplies the replay secret; only its hash is retained. Domain
+// separation keeps this derivation specific to simulated consent links.
+func sandboxToken(key, connectionID string) string {
+	mac := hmac.New(sha256.New, []byte(key))
+	mac.Write([]byte("ranjit:sandbox-consent:v1:" + connectionID))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+func (s *Service) connectResponse(c ranjit.Connection, deadline time.Time, key, token string) ranjit.ConnectResponse {
+	out := ranjit.ConnectResponse{Connection: c}
+	if c.Status == "pending" && c.Provider == "sandbox" && deadline.After(s.Now()) {
+		if key != "" {
+			token = sandboxToken(key, c.ID)
+		}
+		out.AuthorizationURL = s.BaseURL + "/sandbox/authorize?token=" + url.QueryEscape(token)
+		out.AuthorizationExpiresAt = deadline
+	}
+	return out
 }

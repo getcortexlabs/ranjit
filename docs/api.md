@@ -18,7 +18,7 @@ Nos conectores diretos, `institution_id` é o nome do provedor selecionado: `efi
 
 `POST /v1/connections` recebe `customer_id` e `institution_id`. O primeiro é o ID interno da aplicação, com até 128 bytes. Use um identificador opaco. O segundo deve vir de `GET /v1/institutions`.
 
-No sandbox, a resposta 201 contém `connection`, `authorization_url` e `authorization_expires_at`. O link é uma credencial temporária. Apenas a aplicação que criou a conexão e a pessoa autorizando devem recebê-lo. A criação não é idempotente: não repita automaticamente um POST cujo resultado ficou incerto; consulte as conexões do cliente antes de tentar novamente.
+No sandbox, a resposta 201 contém `connection`, `authorization_url` e `authorization_expires_at`. O link é uma credencial temporária. Apenas a aplicação que criou a conexão e a pessoa autorizando devem recebê-lo. Envie `Idempotency-Key` (16–128 caracteres ASCII visíveis, sem espaços) para recuperar a mesma conexão em pedidos repetidos durante 24 horas. Outro conteúdo com a mesma chave retorna `409 idempotency_conflict`. Sem a chave, cada POST cria outra conexão. Veja o [contrato de repetição e recuperação do link](backend-reliability.md).
 
 `GET /sandbox/authorize?token=...` exibe a decisão. `POST /sandbox/authorize` recebe `token` e `decision=approve|deny` como `application/x-www-form-urlencoded`. O token dispensa a chave da API apenas nessa rota. Uma decisão bem-sucedida retorna a conexão em JSON. Reutilizar ou deixar vencer o link resulta em 410.
 
@@ -82,6 +82,8 @@ Conexões diretas em `paused` ou `expired` permitem consultar o histórico, mas 
 | 403 | `invalid_origin` | Origem do POST de autorização difere da URL configurada |
 | 404 | `not_found` | Recurso inexistente |
 | 409 | `inactive_connection` | Conexão sem consentimento ativo |
+| 409 | `idempotency_conflict` | Chave de repetição usada com outro pedido |
+| 409 | `webhook_not_retryable` | Entrega não está em falha ou pertence a outro destino |
 | 410 | `invalid_authorization` | Token inválido, consumido ou vencido |
 | 502 | `provider_credentials` | Credenciais, escopos ou vínculo da aplicação inválidos |
 | 502 | `provider_unavailable` | Banco temporariamente indisponível |
@@ -109,3 +111,9 @@ CSV aceita `delimiter` (`,` / `;` / `tab`), `date_column`, `description_column`,
 `GET /v1/transactions?customer_id=personal&q=mercado&from=2026-11-01&through=2026-11-30` busca em todas as contas desse agrupamento; `account_id` restringe uma conta. Datas são inclusivas. A busca textual trata `%` e `_` como caracteres comuns; a conversão de caixa do SQLite é limitada a ASCII. A ordenação é por `posted_on` e ID, decrescente, com `limit` e `cursor`.
 
 `GET /v1/diagnostics` informa versão, perfis indisponíveis e validade de certificados. Não retorna caminhos, sujeitos dos certificados ou credenciais. A rota existe no servidor do binário; bibliotecas que montam seu próprio handler podem fornecê-la com `httpapi.Diagnostics`.
+
+## Notificações e rotação
+
+`GET /v1/webhooks/deliveries` lista eventos da URL configurada com a paginação padrão. `POST /v1/webhooks/deliveries/{id}/retry` reenfileira uma entrega em `failed` e responde `202`, sem corpo. O SDK oferece `WebhookDeliveries`, `RetryWebhook` e `VerifyWebhook`.
+
+A assinatura, os prazos de repetição e a troca de chave com sobreposição estão no [guia de integração confiável](backend-reliability.md). Esses recursos usam o mesmo banco e não exigem serviços adicionais. A revogação também apaga as entregas da conexão, sem desfazer requisições já enviadas.

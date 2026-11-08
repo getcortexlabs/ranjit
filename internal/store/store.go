@@ -21,8 +21,9 @@ import (
 var migrations embed.FS
 
 type Store struct {
-	db    *database
-	guard *filelock.Lock
+	webhookTarget string
+	db            *database
+	guard         *filelock.Lock
 }
 
 func Open(ctx context.Context, path string) (*Store, error) {

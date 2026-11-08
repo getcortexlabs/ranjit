@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Ranjit API",
-    "version": "0.2.0",
-    "description": "Self-hosted financial data API with a local sandbox and direct Efí / Inter Empresas adapters. Bank account access requires credentials issued to the operator; coverage depends on the provider.",
+    "version": "0.4.0",
+    "description": "Self-hosted financial data API with SQLite or PostgreSQL, statement imports, a local sandbox and direct bank adapters. Includes idempotent connection creation and signed sync webhooks. Bank access requires operator-issued credentials; bank connectors remain experimental.",
     "license": {
       "name": "MIT",
       "identifier": "MIT"
@@ -168,6 +168,9 @@
           },
           "502": {
             "$ref": "#/components/responses/Error502"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
           }
         },
         "requestBody": {
@@ -180,7 +183,21 @@
             }
           }
         },
-        "description": "This operation is not idempotent. Repeating it creates another connection."
+        "description": "With Idempotency-Key, retries within 24 hours return the same connection in its current state (201). Reusing a key with different customer_id or institution_id returns 409. After 24 hours the key may create a new connection. Sandbox authorization_url is returned only while the original link is pending and unexpired. Requests without the header create a connection each time. The key is scoped to the installation; use a random key per operation and persist it in your backend.",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Random operation key, reused for retries of the same request for 24 hours. No spaces.",
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 128,
+              "pattern": "^[!-~]{16,128}$"
+            }
+          }
+        ]
       },
       "get": {
         "operationId": "listConnections",
@@ -1140,6 +1157,74 @@
           }
         }
       }
+    },
+    "/v1/webhooks/deliveries": {
+      "get": {
+        "operationId": "listWebhookDeliveries",
+        "summary": "List deliveries for the configured webhook URL",
+        "description": "Requires installation authentication. Records are retained for seven days after their last update. Changing the URL does not reassign existing deliveries. Revoking a connection deletes its delivery records. Empty when no webhook URL is configured.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Delivery page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookDeliveryPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          }
+        }
+      }
+    },
+    "/v1/webhooks/deliveries/{id}/retry": {
+      "post": {
+        "operationId": "retryWebhookDelivery",
+        "summary": "Retry a failed webhook delivery",
+        "description": "Only failed events for the configured URL can be retried. Resets attempt count and keeps the event ID and body unchanged. Requires installation authentication.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Event ID from the delivery list."
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Queued, no response body"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1816,6 +1901,121 @@
             "format": "date-time"
           }
         }
+      },
+      "WebhookData": {
+        "type": "object",
+        "required": [
+          "job_id",
+          "connection_id",
+          "customer_id"
+        ],
+        "properties": {
+          "job_id": {
+            "type": "string"
+          },
+          "connection_id": {
+            "type": "string"
+          },
+          "customer_id": {
+            "type": "string"
+          },
+          "error_code": {
+            "type": "string"
+          }
+        }
+      },
+      "WebhookEvent": {
+        "type": "object",
+        "required": [
+          "id",
+          "type",
+          "created_at",
+          "data"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "sync.succeeded",
+              "sync.failed"
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "data": {
+            "$ref": "#/components/schemas/WebhookData"
+          }
+        }
+      },
+      "WebhookDelivery": {
+        "type": "object",
+        "required": [
+          "event",
+          "status",
+          "attempts",
+          "updated_at"
+        ],
+        "properties": {
+          "event": {
+            "$ref": "#/components/schemas/WebhookEvent"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "delivered",
+              "failed"
+            ]
+          },
+          "attempts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 8,
+            "description": "Attempts since creation or manual retry, including reclaimed leases."
+          },
+          "http_status": {
+            "type": "integer"
+          },
+          "error_code": {
+            "type": "string",
+            "enum": [
+              "transport_error",
+              "http_error",
+              "lease_exhausted"
+            ]
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "next_attempt_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "WebhookDeliveryPage": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WebhookDelivery"
+            }
+          },
+          "next_cursor": {
+            "type": "string"
+          }
+        }
       }
     },
     "responses": {
@@ -1892,7 +2092,7 @@
         }
       },
       "Error409": {
-        "description": "Connection is not active",
+        "description": "Resource state conflict: inactive_connection, idempotency_conflict or webhook_not_retryable.",
         "headers": {
           "X-Request-ID": {
             "description": "Generated request identifier.",
@@ -1952,6 +2152,52 @@
             "schema": {
               "$ref": "#/components/schemas/Error"
             }
+          }
+        }
+      }
+    }
+  },
+  "webhooks": {
+    "syncResult": {
+      "post": {
+        "operationId": "receiveSyncResult",
+        "summary": "Receive a terminal sync result at RANJIT_WEBHOOK_URL",
+        "description": "Configure a shared signing secret, at least 32 characters. Ranjit-Signature is t=<unix seconds>,v1=<hex HMAC-SHA256 of timestamp + dot + original body>. Verify before JSON decoding and enforce a five-minute timestamp tolerance. Deduplicate event.id durably. Retries keep the same ID/body with a fresh signature. Delivery is unordered and may repeat. Eight automatic attempts, ten-second timeout, redirects rejected. Events contain metadata only.",
+        "security": [],
+        "parameters": [
+          {
+            "name": "Ranjit-Signature",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Ranjit-Event-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookEvent"
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Persisted; stop retries"
+          },
+          "default": {
+            "description": "Retry, up to eight attempts"
           }
         }
       }

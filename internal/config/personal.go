@@ -28,13 +28,17 @@ type Profile struct {
 }
 
 type Personal struct {
-	Version      int       `json:"version"`
-	Database     string    `json:"database"`
-	APIKey       string    `json:"api_key"`
-	Addr         string    `json:"addr"`
-	BaseURL      string    `json:"base_url"`
-	SyncInterval string    `json:"sync_interval"`
-	Profiles     []Profile `json:"profiles"`
+	PreviousAPIKey          string    `json:"previous_api_key,omitempty"`
+	PreviousAPIKeyExpiresAt time.Time `json:"previous_api_key_expires_at,omitzero"`
+	WebhookURL              string    `json:"webhook_url,omitempty"`
+	WebhookSecret           string    `json:"webhook_secret,omitempty"`
+	Version                 int       `json:"version"`
+	Database                string    `json:"database"`
+	APIKey                  string    `json:"api_key"`
+	Addr                    string    `json:"addr"`
+	BaseURL                 string    `json:"base_url"`
+	SyncInterval            string    `json:"sync_interval"`
+	Profiles                []Profile `json:"profiles"`
 }
 
 var profileName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$`)
@@ -93,6 +97,12 @@ func (c Personal) Validate() error {
 	}
 	if d, err := time.ParseDuration(c.SyncInterval); err != nil || d < time.Minute {
 		return errors.New("sync_interval must be at least 1m")
+	}
+	if err := validatePrevious(c.APIKey, c.PreviousAPIKey, c.PreviousAPIKeyExpiresAt); err != nil {
+		return err
+	}
+	if err := validateWebhook(c.WebhookURL, c.WebhookSecret); err != nil {
+		return err
 	}
 	return validateProfiles(c.Profiles)
 }
@@ -163,5 +173,5 @@ func (c Personal) Runtime(path string) Config {
 		p.AccessTokenFile = resolve(p.AccessTokenFile)
 	}
 	interval, _ := time.ParseDuration(c.SyncInterval)
-	return Config{Addr: c.Addr, BaseURL: c.BaseURL, APIKey: c.APIKey, Database: resolve(c.Database), SyncInterval: interval, Provider: "profiles", Profiles: profiles}
+	return Config{PersonalFile: path, PreviousAPIKey: c.PreviousAPIKey, PreviousAPIKeyExpiresAt: c.PreviousAPIKeyExpiresAt, WebhookURL: c.WebhookURL, WebhookSecret: c.WebhookSecret, Addr: c.Addr, BaseURL: c.BaseURL, APIKey: c.APIKey, Database: resolve(c.Database), SyncInterval: interval, Provider: "profiles", Profiles: profiles}
 }

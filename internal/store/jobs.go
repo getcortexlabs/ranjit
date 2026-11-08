@@ -130,10 +130,30 @@ func (s *Store) ClaimSelected(ctx context.Context, now time.Time, lease time.Dur
 		return ranjit.Job{}, err
 	}
 	defer tx.Rollback()
-	if _, err = tx.ExecContext(ctx, `UPDATE jobs SET status = 'failed', error_code = 'lease_exhausted', updated_at = ?, lease_token = ''
-		WHERE status = 'running' AND lease_until <= ? AND attempts >= ?`, now.UnixMilli(), now.UnixMilli(), MaxAttempts); err != nil {
+	rows, err := tx.QueryContext(ctx, `UPDATE jobs SET status='failed',error_code='lease_exhausted',updated_at=?,lease_token='',lease_until=0 WHERE status='running' AND lease_until<=? AND attempts>=? RETURNING `+jobColumns, now.UnixMilli(), now.UnixMilli(), MaxAttempts)
+	if err != nil {
 		return ranjit.Job{}, err
 	}
+	var exhausted []ranjit.Job
+	for rows.Next() {
+		j, e := scanJob(rows)
+		if e != nil {
+			rows.Close()
+			return j, e
+		}
+		exhausted = append(exhausted, j)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return ranjit.Job{}, err
+	}
+	for _, j := range exhausted {
+		if err = s.queueWebhook(ctx, tx, j, "sync.failed", now); err != nil {
+			return j, err
+		}
+	}
+
 	j, err := scanJob(tx.QueryRowContext(ctx, `UPDATE jobs SET status = 'running', attempts = attempts + 1,
 		updated_at = ?, lease_until = ?, lease_token = ? WHERE id = (
 		SELECT j.id FROM jobs j JOIN connections c ON c.id = j.connection_id
@@ -160,9 +180,23 @@ func (s *Store) FailAfter(ctx context.Context, j ranjit.Job, code string, now ti
 	}
 	delay := time.Duration(1<<min(j.Attempts, MaxAttempts)) * time.Second
 	delay = max(delay, min(retryAfter, 5*time.Minute))
-	result, err := s.db.ExecContext(ctx, `UPDATE jobs SET status = ?, error_code = ?, updated_at = ?, available_at = ?, lease_token = '', lease_until = 0
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, `UPDATE jobs SET status = ?, error_code = ?, updated_at = ?, available_at = ?, lease_token = '', lease_until = 0
 		WHERE id = ? AND status = 'running' AND lease_token = ? AND lease_until > ?`, status, code, now.UnixMilli(), now.Add(delay).UnixMilli(), j.ID, j.LeaseToken, now.UnixMilli())
-	return changed(result, err, ranjit.ErrLease)
+	if err = changed(result, err, ranjit.ErrLease); err != nil {
+		return err
+	}
+	if status == "failed" {
+		j.ErrorCode = code
+		if err = s.queueWebhook(ctx, tx, j, "sync.failed", now); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // ConfiguredConnections excludes profiles absent from this process. A separate

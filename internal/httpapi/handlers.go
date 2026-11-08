@@ -9,12 +9,16 @@ import (
 )
 
 func (h *Server) connect(w http.ResponseWriter, r *http.Request) {
+	if values := r.Header.Values("Idempotency-Key"); len(values) > 1 || len(values) == 1 && !ranjit.ValidIdempotencyKey(values[0]) {
+		h.problem(w, fmt.Errorf("%w: invalid Idempotency-Key", ranjit.ErrInvalid))
+		return
+	}
 	var input ranjit.ConnectRequest
 	if err := decode(r, &input); err != nil {
 		h.problem(w, err)
 		return
 	}
-	result, err := h.service.Connect(r.Context(), input)
+	result, err := h.service.ConnectWithKey(r.Context(), input, r.Header.Get("Idempotency-Key"))
 	if err != nil {
 		h.problem(w, err)
 		return
@@ -135,4 +139,26 @@ func (h *Server) searchTransactions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	write(w, 200, result)
+}
+
+func (h *Server) webhookDeliveries(w http.ResponseWriter, r *http.Request) {
+	cursor, limit, err := pagination(r)
+	if err != nil {
+		h.problem(w, err)
+		return
+	}
+	result, err := h.service.Store.WebhookDeliveries(r.Context(), cursor, limit)
+	if err != nil {
+		h.problem(w, err)
+		return
+	}
+	write(w, http.StatusOK, result)
+}
+
+func (h *Server) retryWebhook(w http.ResponseWriter, r *http.Request) {
+	if err := h.service.Store.RetryWebhook(r.Context(), r.PathValue("id"), h.service.Now()); err != nil {
+		h.problem(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusAccepted)
 }

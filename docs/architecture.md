@@ -45,7 +45,7 @@ O hash do Client ID e do ambiente vincula a conexão à aplicação Efí. No Int
 
 ## Sincronização
 
-Um índice parcial permite no máximo um job `queued` ou `running` por conexão. Pedidos simultâneos de sincronização devolvem esse mesmo job. Criar conexões não é idempotente: uma repetição do POST cria outra conexão.
+Um índice parcial permite no máximo um job `queued` ou `running` por conexão. Pedidos simultâneos de sincronização devolvem esse mesmo job. Criar conexões com `Idempotency-Key` recupera a mesma conexão durante 24 horas; sem esse cabeçalho, uma repetição do POST cria outra conexão.
 
 O worker verifica vencimentos, agenda conexões elegíveis e reivindica um job a cada passo. A reivindicação gera um token de execução e uma concessão de um minuto. A consulta ao provedor tem timeout de 20 segundos. Se o processo morrer, uma nova execução pode recuperar o job após esse minuto. Cada processo seleciona apenas conexões das instituições que conhece; adicionar um perfil pelo terminal exige reiniciar o servidor para disponibilizá-lo na API.
 
@@ -89,3 +89,11 @@ Backups e restauração são feitos por PostgreSQL ou pela hospedagem. Os comand
 O painel é servido por `internal/httpapi` com `go:embed`, sem CDN ou dependências de frontend em produção. A API continua sendo a fronteira de dados. Sessões locais são mantidas em memória; mutações por cookie exigem origem correspondente. O comando `ui` usa um link descartável em fragmento para não colocar a chave do operador no navegador.
 
 `internal/autostart` renderiza serviços por usuário para os três sistemas suportados. `internal/updater` verifica assets estáveis do repositório e troca o executável mantendo a versão anterior. A camada de armazenamento coordena manutenção com locks compartilhados no uso normal e exclusivos em restauração/atualização. `VACUUM INTO` produz backups independentes do WAL; restauração valida, migra em arquivo temporário e publica apenas o resultado completo. Os testes de navegador ficam separados em `tests/browser`; Node e Playwright são dependências de desenvolvimento.
+
+## Repetição e entrega ao backend
+
+`connection_requests` vincula hashes da chave e do pedido a uma conexão por 24 horas. A criação da conexão, o primeiro job e esse vínculo são gravados juntos. Repetições retornam o estado atual; a aplicação não reabre um consentimento consumido. O token do sandbox pode ser derivado novamente apenas com a chave enviada pelo chamador; o banco mantém somente hashes.
+
+`webhook_deliveries` é a outbox de resultados de sincronização. `Complete` e as falhas terminais escrevem o evento na mesma transação da mudança do job. O worker de entrega usa leases com fencing, assinatura HMAC e backoff; não mantém uma transação aberta durante HTTP. Cada evento aceita até oito tentativas automáticas, com repetições possíveis. Não há garantia de entrega após o limite. O receptor deduplica o ID. O hash da URL associa a fila a um destinatário sem persistir o endereço; mudar a configuração não transfere eventos antigos para outra URL.
+
+A autenticação continua por instalação. Configuração por ambiente aceita chave atual e anterior com expiração. Configuração pessoal relê as chaves para observar substituições atômicas de `config.json`, negando autenticação por chave quando o arquivo não puder ser validado.

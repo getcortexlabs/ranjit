@@ -1,6 +1,6 @@
 services:
   ranjit:
-    image: ghcr.io/getcortexlabs/ranjit:v0.3.0
+    image: ghcr.io/getcortexlabs/ranjit:v0.4.0
     pull_policy: never
     ports:
       - "127.0.0.1:8080:8080"

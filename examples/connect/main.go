@@ -36,7 +36,13 @@ func run() error {
 	if len(institutions.Data) == 0 {
 		return fmt.Errorf("no configured institution")
 	}
-	result, err := client.Connect(ctx, ranjit.ConnectRequest{CustomerID: "local-user", InstitutionID: institutions.Data[0].ID})
+	// Reuse RANJIT_OPERATION_KEY after a lost response. Production backends
+	// should persist one random key for each logical creation in their database.
+	operationKey := os.Getenv("RANJIT_OPERATION_KEY")
+	if operationKey == "" {
+		operationKey = ranjit.NewID("op")
+	}
+	result, err := client.ConnectWithKey(ctx, ranjit.ConnectRequest{CustomerID: "local-user", InstitutionID: institutions.Data[0].ID}, operationKey)
 	if err != nil {
 		return err
 	}
